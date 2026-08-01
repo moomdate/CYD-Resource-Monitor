@@ -91,6 +91,31 @@ python monitor_agent.py          # หา port ของบอร์ดเอง
 
 Agent ออกแบบให้ degrade อย่างสุภาพ — ข้อมูลไหนไม่มี จอขึ้น `n/a` แทน ไม่พังทั้งระบบ
 
+## การใช้งานประจำวัน & Auto-start
+
+### Windows
+
+ไฟล์ `.exe` เป็นแบบ **portable — ไม่ต้อง install** วางไว้ที่ไหนก็ได้ เสียบบอร์ด ดับเบิลคลิก จบ จะมีหน้าต่าง console เปิดขึ้นมาแสดง `connected to COM5` แล้วจอเริ่มขึ้นข้อมูลทันที
+
+- **เฉพาะครั้งแรก**: SmartScreen จะเตือนเพราะไฟล์ไม่ได้ code-sign — กด *More info → Run anyway*
+- **ไม่ต้องตั้งค่าอะไร**: agent หา COM port ของบอร์ด (CH340) เองอัตโนมัติ และรองรับการ์ด NVIDIA ในตัว มีแค่อุณหภูมิ CPU / การ์ด AMD / Intel ที่ต้องเปิด LibreHardwareMonitor คู่กัน (ดูตารางด้านบน)
+- **เปิดเครื่องใหม่ agent จะไม่รันเอง** — จอจะขึ้น *WAITING FOR PC* จนกว่าจะเปิด `.exe` อีกครั้ง ถ้าอยากให้รันอัตโนมัติ:
+
+| วิธี | ขั้นตอน | ผลลัพธ์ |
+|---|---|---|
+| **Startup folder** (ง่ายสุด) | `Win + R` → พิมพ์ `shell:startup` → Enter → คลิกขวาลาก `.exe` เข้าไป → *Create shortcut here* | รันทุกครั้งที่ login มีหน้าต่าง console ค้างไว้ (minimize ทิ้งได้) |
+| **Task Scheduler** (เนียนกว่า) | สร้าง task, trigger *At log on*, action ชี้ไปที่ `.exe`, ติ๊ก *Hidden* | รันเงียบๆ เบื้องหลัง ไม่มีหน้าต่าง |
+
+ถ้าใช้ LibreHardwareMonitor เพื่อดูอุณหภูมิ อย่าลืมติ๊ก *Run On Windows Startup* ของตัวมันเองด้วย
+
+### macOS
+
+รัน `./cyd-monitor-agent-macos` (ครั้งแรก: right-click → Open เพราะไฟล์ไม่ได้ sign) อยากให้รันตอน login: *System Settings → General → Login Items → กด +* แล้วเลือกไฟล์
+
+### เกร็ดน่ารู้
+
+Agent มี reconnect loop ในตัว — ถอดบอร์ด เสียบใหม่ หรือจอรีบูต **ไม่ต้องรัน agent ซ้ำ** มันต่อกลับให้เอง
+
 > ⚠️ **ข้อจำกัด macOS**: Apple ล็อกการอ่าน GPU load บน Apple Silicon ไว้หลัง API ที่ต้องใช้ sudo จอจึงแสดง GPU load เป็น `n/a` บน Mac ส่วน Windows ได้ครบทุกอย่างถ้ารัน LibreHardwareMonitor
 
 ## Release อัตโนมัติ (CI)

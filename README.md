@@ -91,6 +91,31 @@ python monitor_agent.py          # auto-detects the board's port
 
 The agent degrades gracefully — anything unavailable shows as `n/a` on the display.
 
+## Daily use & auto-start
+
+### Windows
+
+The `.exe` is **portable — no installer**. Put it anywhere, plug in the board, double-click, done. A console window opens and shows `connected to COM5`; the display starts updating immediately.
+
+- **First run only**: SmartScreen will warn because the binary is unsigned — click *More info → Run anyway*.
+- **No configuration needed**: the agent finds the board's COM port (CH340) by itself, and NVIDIA support is bundled in. Only CPU temp / AMD / Intel GPU stats need LibreHardwareMonitor running alongside (see the table above).
+- **After a reboot the agent does NOT start by itself** — the display shows *WAITING FOR PC* until you run it again. To make it automatic:
+
+| Method | Steps | Result |
+|---|---|---|
+| **Startup folder** (easiest) | `Win + R` → type `shell:startup` → Enter → right-drag the `.exe` in → *Create shortcut here* | runs at every login, console window stays open (minimize it) |
+| **Task Scheduler** (cleaner) | create a task, trigger *At log on*, action = the `.exe`, tick *Hidden* | runs silently in the background, no window |
+
+If you use LibreHardwareMonitor for temperatures, enable its own *Run On Windows Startup* option too.
+
+### macOS
+
+Run `./cyd-monitor-agent-macos` (first time: right-click → Open, because it's unsigned). To start it at login: *System Settings → General → Login Items → +* and pick the binary.
+
+### Good to know
+
+The agent has a built-in reconnect loop — unplugging the board, replugging it, or rebooting the display never requires restarting the agent. It just reconnects.
+
 > ⚠️ **macOS limitation**: Apple locks GPU-load counters behind sudo-only APIs on Apple Silicon, so GPU load shows `n/a` on Macs. Windows gets the full picture with LibreHardwareMonitor running.
 
 ## Releases (CI)
