@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    name: firmware (ESP32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build with PlatformIO
+        run: |
+          pip install platformio
+          pio run
+          cp .pio/build/esp32dev/firmware.bin cyd-resource-monitor-firmware.bin
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cyd-resource-monitor-firmware.bin
+
+  agent:
+    name: agent (${{ matrix.os }})
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            out: cyd-monitor-agent-windows.exe
+            built: dist/cyd-monitor-agent.exe
+          - os: macos-latest
+            out: cyd-monitor-agent-macos
+            built: dist/cyd-monitor-agent
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build single-file binary
+        shell: bash
+        working-directory: agent
+        run: |
+          pip install pyinstaller psutil pyserial pynvml
+          pyinstaller --onefile --name cyd-monitor-agent monitor_agent.py
+          mv "${{ matrix.built }}" "../${{ matrix.out }}"
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.out }}

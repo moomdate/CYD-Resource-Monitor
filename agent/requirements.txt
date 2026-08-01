@@ -1,0 +1,4 @@
+psutil>=5.9
+pyserial>=3.5
+# optional — NVIDIA GPU stats:
+# pynvml>=11.5
