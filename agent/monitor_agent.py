@@ -2,29 +2,43 @@
 """CYD Resource Monitor agent.
 
 Reads system stats and streams them as JSON lines over USB serial
-to the ESP32 display. Works on Windows and macOS.
+to the ESP32 display. Works on Windows, macOS and Linux.
 
   python monitor_agent.py               # auto-detect port, 2 Hz
   python monitor_agent.py --list        # list serial ports
   python monitor_agent.py --port COM5   # explicit port
   python monitor_agent.py --print       # dry run: print JSON, no serial
 
-Optional richer data:
+Optional richer data (every field is optional - the display shows "--" for what is missing):
   - NVIDIA GPUs:            pip install pynvml
-  - Windows temps/AMD/Intel: run LibreHardwareMonitor with
-    Options > Remote Web Server enabled (default http://localhost:8085)
-  - macOS CPU temp:          install `smctemp` (brew install smctemp)
+  - Windows CPU power / voltage / fan, drive temp + activity, AMD/Intel GPU:
+                            run LibreHardwareMonitor with Options > Remote Web Server
+                            enabled (default http://localhost:8085)
+  - macOS CPU temp:         install `smctemp` (brew install smctemp)
+  - Linux CPU / drive temps and fans come from psutil's sensors (lm-sensors drivers)
+
+Protocol (one JSON object per line, all keys but "cpu"/"ram"/"net"/"disk" optional):
+  cpu   {load, freq, cores, temp, name, power, volt, fan, per_core[<=16]}
+  ram   {pct, used, total}
+  gpus  [{name, load, temp, vram_used, vram_total, discrete}]
+  disk  {pct, act, r, w, temp, model}      pct = capacity used, act = busy %, r/w = MiB/s
+  net   {dl, ul}                           MiB/s
+  host  {name, os, clock}                  clock = local seconds since midnight
+Keys added after the first firmware (name, power, volt, fan, per_core, act, temp, model,
+clock) are simply ignored by older firmware, and older agents work with the new firmware.
 """
 
 import argparse
+import functools
 import json
+import math
+import os
 import platform
 import re
 import shutil
 import socket
 import subprocess
 import sys
-import functools
 print = functools.partial(print, flush=True)
 import time
 
@@ -32,6 +46,9 @@ import psutil
 
 IS_WIN = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
+IS_LINUX = platform.system() == "Linux"
+
+MAX_CORES = 16   # the display draws at most this many per-core bars
 
 # ── NVIDIA via pynvml (optional) ───────────────────────────────
 try:
@@ -69,61 +86,113 @@ def nvidia_gpus():
 
 
 # ── LibreHardwareMonitor web server (optional, Windows) ────────
+# LHM's data.json is a tree: computer > hardware (CPU, GPU, drive...) > sensor group > sensor.
+# Hardware nodes carry an icon (cpu.png, hdd.png, mainboard.png, ...) that tells us what they are.
+HW_ICONS = ("cpu", "hdd", "mainboard", "chip", "ram", "nvidia", "ati", "intel", "nic")
+
+
 def lhm_fetch(url):
-    """Return flat list of (path, value, unit) from LHM's data.json tree."""
+    """Return a flat list of sensors from LHM's data.json tree, or None if it is not reachable.
+    Each sensor is (path, value, unit, hardware_kind, hardware_name)."""
     import urllib.request
     try:
         with urllib.request.urlopen(url, timeout=1) as r:
             tree = json.load(r)
     except Exception:
         return None
+    return lhm_flatten(tree)
+
+
+def lhm_flatten(tree):
     flat = []
 
-    def walk(node, path):
+    def walk(node, path, hw_kind, hw_name):
         text = node.get("Text", "")
+        icon = str(node.get("ImageURL", "")).lower()
+        for k in HW_ICONS:                          # a node whose icon is a hardware icon is a device
+            if icon.endswith(k + ".png"):
+                hw_kind, hw_name = k, text
+                break
         val = node.get("Value", "")
         p = path + [text]
         if val:
             m = re.match(r"([\d.,]+)\s*(.*)", str(val))
             if m:
                 try:
-                    flat.append(("/".join(p), float(m.group(1).replace(",", ".")), m.group(2)))
+                    flat.append(("/".join(p), float(m.group(1).replace(",", ".")), m.group(2).strip(),
+                                 hw_kind, hw_name))
                 except ValueError:
                     pass
         for ch in node.get("Children", []):
-            walk(ch, p)
+            walk(ch, p, hw_kind, hw_name)
 
-    walk(tree, [])
+    walk(tree, [], "", "")
     return flat
 
 
 def lhm_extract(flat):
-    """Pull CPU temp and non-NVIDIA GPU stats out of the LHM sensor list."""
-    out = {"cpu_temp": None, "gpus": []}
+    """Pull CPU temp / power / voltage / fan, drive info and non-NVIDIA GPU stats out of the LHM sensor list."""
+    out = {"cpu_temp": None, "cpu_power": None, "cpu_volt": None, "cpu_fan": None, "disk": {}, "gpus": []}
     if not flat:
         return out
+
     # CPU package/core temperature
-    for path, v, unit in flat:
+    for path, v, unit, kind, hw in flat:
         low = path.lower()
-        if unit == "°C" and "cpu" in low and ("package" in low or "core (tctl" in low or "core average" in low):
+        if unit == "°C" and (kind == "cpu" or "cpu" in low) and \
+           ("package" in low or "core (tctl" in low or "core average" in low):
             out["cpu_temp"] = v
             break
     if out["cpu_temp"] is None:
-        cands = [v for p, v, u in flat if u == "°C" and "cpu" in p.lower()]
+        cands = [v for p, v, u, k, h in flat if u == "°C" and (k == "cpu" or "cpu" in p.lower())]
         if cands:
             out["cpu_temp"] = max(cands)
-    # AMD / Intel GPU nodes (NVIDIA already handled by pynvml)
-    gpu_names = set()
-    for path, v, unit in flat:
-        parts = path.split("/")
-        for part in parts:
-            low = part.lower()
-            if ("gpu" in low or "radeon" in low or "graphics" in low) and len(part) > 6 and "nvidia" not in low:
-                gpu_names.add(part)
+
+    # CPU package power, core voltage
+    for path, v, unit, kind, hw in flat:
+        low = path.lower()
+        if kind == "cpu" and unit == "W" and "package" in low and out["cpu_power"] is None:
+            out["cpu_power"] = v
+        if kind == "cpu" and unit == "V" and out["cpu_volt"] is None and ("cpu core" in low or "core (svi2" in low):
+            out["cpu_volt"] = v
+    if out["cpu_volt"] is None:                     # Intel: "Core #1 VID" ... - take the highest
+        vids = [v for p, v, u, k, h in flat if k == "cpu" and u == "V"]
+        if vids:
+            out["cpu_volt"] = max(vids)
+
+    # CPU fan: a fan whose name mentions the CPU, on the board / Super I/O chip
+    for path, v, unit, kind, hw in flat:
+        if unit == "RPM" and kind in ("mainboard", "chip") and "cpu" in path.lower().split("/")[-1]:
+            out["cpu_fan"] = v
+            break
+
+    # First drive: name, temperature, total activity
+    for path, v, unit, kind, hw in flat:
+        if kind != "hdd":
+            continue
+        d = out["disk"]
+        if not d:
+            d["name"] = hw
+        if d.get("name") != hw:
+            continue                                # only the first drive
+        last = path.lower().split("/")[-1]
+        if unit == "°C" and "temp" not in d:
+            d["temp"] = v
+        if unit == "%" and "total activity" in last:
+            d["act"] = v
+
+    # AMD / Intel GPUs: hardware nodes with a GPU icon or GPU-ish name (NVIDIA is handled by pynvml)
+    gpu_names = []
+    for path, v, unit, kind, hw in flat:
+        low = hw.lower()
+        if not hw or hw in gpu_names or kind == "cpu" or "nvidia" in low:
+            continue
+        if kind == "ati" or any(k in low for k in ("radeon", "graphics", "gpu")):
+            gpu_names.append(hw)
     for name in gpu_names:
         g = {"name": name[:24], "discrete": not ("intel" in name.lower() and "uhd" in name.lower())}
-        for path, v, unit in flat:
-            if name not in path:
+        for path, v, unit, kind, hw in flat:
+            if hw != name:
                 continue
             low = path.lower()
             if unit == "%" and ("gpu core" in low or "d3d 3d" in low) and "load" not in g:
@@ -164,6 +233,107 @@ def mac_cpu_temp():
         return None
 
 
+def mac_disk_model():
+    try:
+        r = subprocess.run(["system_profiler", "-json", "SPNVMeDataType"],
+                           capture_output=True, text=True, timeout=10)
+        for ctrl in json.loads(r.stdout).get("SPNVMeDataType", []):
+            for item in ctrl.get("_items", []):
+                if item.get("device_model"):
+                    return item["device_model"]
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(["diskutil", "info", "/"], capture_output=True, text=True, timeout=5)
+        m = re.search(r"Media Name:\s*(.+)", r.stdout)
+        if m:
+            return m.group(1).strip()
+    except Exception:
+        pass
+    return None
+
+
+# ── Linux helpers ──────────────────────────────────────────────
+def linux_sensors():
+    """(cpu_temp, cpu_fan, nvme_temp) from psutil's sensor API; any may be None."""
+    cpu_temp = fan = nvme = None
+    try:
+        temps = psutil.sensors_temperatures()
+    except Exception:
+        temps = {}
+    for chip in ("coretemp", "k10temp", "zenpower", "cpu_thermal", "cpu-thermal", "acpitz"):
+        entries = temps.get(chip) or []
+        if not entries:
+            continue
+        pick = next((e for e in entries if any(k in (e.label or "").lower() for k in ("package", "tctl", "tdie"))),
+                    entries[0])
+        cpu_temp = pick.current
+        break
+    ent = temps.get("nvme") or []
+    if ent:
+        pick = next((e for e in ent if "composite" in (e.label or "").lower()), ent[0])
+        nvme = pick.current
+    try:
+        for entries in psutil.sensors_fans().values():
+            if entries:
+                fan = entries[0].current
+                break
+    except Exception:
+        pass
+    return cpu_temp, fan, nvme
+
+
+def linux_disk_model():
+    try:
+        devs = sorted(os.listdir("/sys/block"))
+    except OSError:
+        return None
+    devs.sort(key=lambda d: not d.startswith("nvme"))          # NVMe first
+    for d in devs:
+        if d.startswith(("loop", "ram", "zram", "dm-", "md", "sr")):
+            continue
+        try:
+            with open(f"/sys/block/{d}/device/model") as f:
+                name = f.read().strip()
+            if name:
+                return name
+        except OSError:
+            continue
+    return None
+
+
+# ── identity helpers ───────────────────────────────────────────
+def clean_cpu_name(raw):
+    """'AMD Ryzen 7 7800X3D 8-Core Processor' -> 'AMD Ryzen 7 7800X3D' (fits the display)."""
+    s = re.sub(r"\((?:R|TM)\)", "", raw or "", flags=re.I)
+    s = re.sub(r"\b(?:CPU|Processor)\b", "", s, flags=re.I)
+    s = re.sub(r"@\s*[\d.]+\s*[GM]Hz", "", s, flags=re.I)
+    s = re.sub(r"\b\d+-Core\b", "", s, flags=re.I)
+    return re.sub(r"\s+", " ", s).strip()[:27]
+
+
+def cpu_name():
+    raw = ""
+    try:
+        if IS_WIN:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                raw = winreg.QueryValueEx(k, "ProcessorNameString")[0]
+        elif IS_MAC:
+            raw = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                 capture_output=True, text=True, timeout=2).stdout
+        else:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.lower().startswith("model name"):
+                        raw = line.split(":", 1)[1]
+                        break
+    except Exception:
+        pass
+    return clean_cpu_name(raw or platform.processor())
+
+
 def host_name():
     name = socket.gethostname().split(".")[0]
     if name and not name.isdigit():
@@ -179,6 +349,46 @@ def host_name():
     return "Mac" if IS_MAC else "PC"
 
 
+# ── payload helpers ────────────────────────────────────────────
+def group_cores(values, n=MAX_CORES):
+    """Per-core loads as ints; more than n logical CPUs are averaged into n groups."""
+    vals = [max(0.0, min(100.0, float(v))) for v in values]
+    if len(vals) > n:
+        size = len(vals) / n
+        vals = [sum(vals[int(i * size):int((i + 1) * size)]) / max(1, len(vals[int(i * size):int((i + 1) * size)]))
+                for i in range(n)]
+    return [int(round(v)) for v in vals]
+
+
+class ActivityEstimator:
+    """Drive activity % when the OS gives no busy-time counter: throughput relative to the
+    highest throughput seen this session (never below `floor` MiB/s). An estimate, not a measurement."""
+
+    def __init__(self, floor=150.0):
+        self.peak = floor
+
+    def update(self, mib_per_s):
+        self.peak = max(self.peak, mib_per_s)
+        return min(100.0, 100.0 * mib_per_s / self.peak)
+
+
+def clean(obj):
+    """Drop None and non-finite numbers, recursively, so the firmware sees 'absent' instead of NaN."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            v = clean(v)
+            if v is None or v == {}:
+                continue
+            out[k] = v
+        return out
+    if isinstance(obj, list):
+        return [x for x in (clean(v) for v in obj) if x is not None]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
 # ── payload assembly ───────────────────────────────────────────
 class Sampler:
     def __init__(self, lhm_url):
@@ -187,7 +397,16 @@ class Sampler:
         self.prev_net = psutil.net_io_counters()
         self.prev_t = time.time()
         self.static_mac_gpus = mac_gpus() if IS_MAC else []
-        psutil.cpu_percent()  # prime
+        self.cpu_name = cpu_name()
+        self.host = host_name()
+        self.estimator = ActivityEstimator()
+        self.disk_model = None
+        if IS_MAC:
+            self.disk_model = mac_disk_model()
+        elif IS_LINUX:
+            self.disk_model = linux_disk_model()
+        psutil.cpu_percent()                    # prime both counters; the first reading is meaningless
+        psutil.cpu_percent(percpu=True)
 
     def sample(self):
         now = time.time()
@@ -204,27 +423,49 @@ class Sampler:
         disk_w = (dio.write_bytes - self.prev_disk.write_bytes) / dt / 2**20
         net_dl = (nio.bytes_recv - self.prev_net.bytes_recv) / dt / 2**20
         net_ul = (nio.bytes_sent - self.prev_net.bytes_sent) / dt / 2**20
+        busy = None
+        if hasattr(dio, "busy_time") and hasattr(self.prev_disk, "busy_time"):   # Linux / BSD only
+            busy = min(100.0, (dio.busy_time - self.prev_disk.busy_time) / (dt * 10.0))
         self.prev_disk, self.prev_net = dio, nio
 
-        cpu_temp = None
+        cpu_temp = cpu_power = cpu_volt = cpu_fan = None
+        disk_temp = disk_act = None
+        disk_model = self.disk_model
         gpus = nvidia_gpus()
 
         if IS_WIN and self.lhm_url:
             lhm = lhm_extract(lhm_fetch(self.lhm_url))
-            cpu_temp = lhm["cpu_temp"]
+            cpu_temp, cpu_power = lhm["cpu_temp"], lhm["cpu_power"]
+            cpu_volt, cpu_fan = lhm["cpu_volt"], lhm["cpu_fan"]
+            disk_temp = lhm["disk"].get("temp")
+            disk_act = lhm["disk"].get("act")
+            disk_model = lhm["disk"].get("name") or disk_model
             gpus += lhm["gpus"]
         if IS_MAC:
             cpu_temp = mac_cpu_temp()
             if not gpus:
                 gpus = list(self.static_mac_gpus)
+        if IS_LINUX:
+            cpu_temp, cpu_fan, disk_temp = linux_sensors()
+
+        if disk_act is None:
+            disk_act = busy if busy is not None else self.estimator.update(disk_r + disk_w)
 
         gpus.sort(key=lambda g: not g.get("discrete", False))  # discrete first
 
+        per = psutil.cpu_percent(percpu=True)
+        lt = time.localtime()
         payload = {
             "cpu": {
                 "load": round(psutil.cpu_percent(), 1),
-                "freq": round(freq.current, 0) if freq else 0,
+                "freq": round(freq.current, 0) if freq and freq.current else None,   # None: unknown -> omitted
                 "cores": psutil.cpu_count(logical=True),
+                "name": self.cpu_name or None,
+                "temp": round(cpu_temp, 1) if cpu_temp is not None else None,
+                "power": round(cpu_power, 1) if cpu_power is not None else None,
+                "volt": round(cpu_volt, 3) if cpu_volt is not None else None,
+                "fan": round(cpu_fan) if cpu_fan is not None else None,
+                "per_core": group_cores(per) if per else None,
             },
             "ram": {
                 "pct": round(vm.percent, 1),
@@ -232,14 +473,20 @@ class Sampler:
                 "total": round(vm.total / 2**30, 1),
             },
             "gpus": gpus[:2],
-            "disk": {"pct": round(du.percent, 1), "r": round(disk_r, 1), "w": round(disk_w, 1)},
+            "disk": {
+                "pct": round(du.percent, 1),
+                "act": round(disk_act, 0),
+                "r": round(disk_r, 1),
+                "w": round(disk_w, 1),
+                "temp": round(disk_temp, 0) if disk_temp is not None else None,
+                "model": (disk_model or "")[:23] or None,
+            },
             "net": {"dl": round(net_dl, 2), "ul": round(net_ul, 2)},
-            "host": {"name": host_name(),
-                     "os": "win" if IS_WIN else ("mac" if IS_MAC else "linux")},
+            "host": {"name": self.host,
+                     "os": "win" if IS_WIN else ("mac" if IS_MAC else "linux"),
+                     "clock": lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec},
         }
-        if cpu_temp is not None:
-            payload["cpu"]["temp"] = round(cpu_temp, 1)
-        return payload
+        return clean(payload)
 
 
 # ── serial ─────────────────────────────────────────────────────
