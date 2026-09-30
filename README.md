@@ -8,9 +8,19 @@ A PC/Mac hardware monitor on a **$6 ESP32 board with a 2.8" touch screen** (CYD 
 ![Agent](https://img.shields.io/badge/agent-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-![Dashboard](images/dashboard.png)
+<p align="center"><img src="images/demo.gif" width="320" alt="Dashboard in demo mode, then tapping through the CPU / temperature / memory / GPU history pages"></p>
 
-> The pictures in this README are **renders of the real firmware UI code** compiled for the host (`tools/host_preview`), not photos of a board. See [What has not been tested on hardware](#status).
+**On a real board:**
+
+| Live data from an M1 MacBook | Demo: GAMING | Demo: TRANSFER |
+|---|---|---|
+| ![Live on a Mac](images/photo-live-mac.jpg) | ![Demo gaming](images/photo-demo-gaming.jpg) | ![Demo transfer](images/photo-demo-transfer.jpg) |
+
+<sub>The live photo was taken before the agent learned to read Apple Silicon temperatures, so CPU / NVMe temperature still show `--` there.</sub>
+
+**Renders of the same UI code** (`tools/host_preview`, pixel-exact):
+
+![Dashboard](images/dashboard.png)
 
 | ICE / LIME | VIOLET | AMBER |
 |---|---|---|
@@ -19,7 +29,7 @@ A PC/Mac hardware monitor on a **$6 ESP32 board with a 2.8" touch screen** (CYD 
 | | | |
 |---|---|---|
 | ![Detail](images/detail.png) | ![Settings](images/settings.png) | ![Offline](images/offline.png) |
-| Tap a panel → 60 s history with MIN / AVG / MAX | Theme, data source, demo scenario, brightness — saved to flash | Agent not running → clear OFFLINE state |
+| Tap a panel → 60 s history with MIN / AVG / MAX | Theme, data source, demo scenario — saved to flash | Agent not running → clear OFFLINE state |
 
 ## Features
 
@@ -29,7 +39,7 @@ A PC/Mac hardware monitor on a **$6 ESP32 board with a 2.8" touch screen** (CYD 
 - **Demo mode** (Settings → DATA SOURCE → DEMO): built-in simulator with the design's IDLE / GAMING / TRANSFER presets, or CYCLE through them — no PC needed
 - **History pages** — tap CPU / RAM / NET / NVMe for a 60-second graph, MIN / AVG / MAX; the arrows also reach CPU temperature and **GPU load** (GPU name, temperature, VRAM), which the dashboard layout has no panel for
 - **Flicker-free**: the static frames and labels are pre-rendered into flash; only the live widgets are drawn, each region repainted **only when its value changed** (a steady screen sends no pixels at all). No full-screen buffer — the CYD has no PSRAM
-- Backlight **brightness** control; all settings persist in NVS flash across power cycles
+- All settings persist in NVS flash across power cycles. The backlight runs full-on: this CYD's backlight cannot dim with PWM (see [Status](#status)); boards that can dim get a brightness control with `BACKLIGHT_DIMMING 1`
 
 ## Architecture
 
@@ -157,11 +167,11 @@ What each OS can provide (besides GPUs):
 | `<` `>` on a history page | steps through CPU load → CPU temp → memory → GPU → network → NVMe |
 | `BACK` / `DONE` | back to the dashboard |
 
-**Settings**: theme (thumbnails of the real art), data source (`PC AGENT` / `DEMO`), demo scenario (`IDLE` / `GAMING` / `TRANSFER` / `CYCLE`), brightness (20–100 %). A line shows whether an agent is currently connected, even while in DEMO.
+**Settings**: theme (thumbnails of the real art), data source (`PC AGENT` / `DEMO`), demo scenario (`IDLE` / `GAMING` / `TRANSFER` / `CYCLE`), and brightness (20–100 %) only when `BACKLIGHT_DIMMING` is 1. A line shows whether an agent is currently connected, even while in DEMO.
 
 Header states: green **ONLINE** (live data), amber **DEMO** (simulator), blinking red **OFFLINE** (no data for 2.5 s).
 
-> The previous firmware's tile picker and animated RGB bar are gone: the dashboard is now one fixed layout (the design). Theme, brightness, history pages, GPU details and persisted settings were kept.
+> The previous firmware's tile picker and animated RGB bar are gone: the dashboard is now one fixed layout (the design). Theme, history pages, GPU details and persisted settings were kept.
 
 ## Daily use & auto-start
 
