@@ -210,7 +210,9 @@ class TestHub(unittest.TestCase):
 
 
 @unittest.skipUnless(hwinfo.IS_MAC, "macOS only")
+@unittest.skipIf(os.environ.get("CI"), "CI macOS runners are VMs: no GPU statistics or thermal sensors")
 class TestLiveMac(unittest.TestCase):
+    """Real-hardware checks: run on a physical Mac (they fail there if a probe regresses)."""
     def test_live_gpu_load(self):
         g = hwinfo.MacGpuProbe().read()
         self.assertTrue(g and 0.0 <= g[0]["load"] <= 100.0, g)
