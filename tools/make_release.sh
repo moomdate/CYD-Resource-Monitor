@@ -10,11 +10,13 @@ OUT="${1:-release}"
 PIO="${PIO:-pio}"
 PY="${PY:-python3}"
 mkdir -p "$OUT"
-BOOT_APP0="$(ls "$HOME"/.platformio/packages/framework-arduinoespressif32*/tools/partitions/boot_app0.bin 2>/dev/null | head -1)"
-[ -n "$BOOT_APP0" ] || { echo "boot_app0.bin not found - run '$PIO run' once first" >&2; exit 1; }
 
 for env in esp32dev cyd-noinvert; do
     "$PIO" run -e "$env"
+    # boot_app0.bin ships with the Arduino core, which PlatformIO only downloads on the first
+    # build - so look it up after building (on a fresh CI runner it does not exist before).
+    BOOT_APP0="$(find "$HOME/.platformio/packages" -path "*framework-arduinoespressif32*/tools/partitions/boot_app0.bin" 2>/dev/null | head -1 || true)"
+    [ -n "$BOOT_APP0" ] || { echo "boot_app0.bin not found under ~/.platformio/packages" >&2; exit 1; }
     B=".pio/build/$env"
     cp "$B/firmware.bin" "$OUT/cyd-resource-monitor-$env.bin"
     "$PY" -m esptool --chip esp32 merge_bin -o "$OUT/cyd-resource-monitor-$env-factory.bin" \
