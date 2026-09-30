@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  firmware:
+    name: firmware (tests + build + host preview)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      # esptool (used to build bootloader.bin) breaks with click >= 8.2
+      - run: pip install platformio "click<8.2" pillow
+      - name: Unit tests (host)
+        run: pio test -e native
+      - name: Build firmware (both panel variants)
+        run: pio run -e esp32dev -e cyd-noinvert
+      - name: Render the UI on the host (layout preview PNGs)
+        run: tools/host_preview/run.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            .pio/build/esp32dev/firmware.bin
+            .pio/build/cyd-noinvert/firmware.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-preview
+          path: |
+            tools/host_preview/out/*.png
+            tools/host_preview/out/sim.gif
+
+  agent:
+    name: agent tests (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install psutil pyserial
+      - name: Agent unit tests
+        run: python -m unittest discover -s agent -v

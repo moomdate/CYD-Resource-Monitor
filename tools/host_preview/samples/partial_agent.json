@@ -1,0 +1,1 @@
+{"cpu":{"load":23.0,"cores":8,"per_core":[30,12,25,40,8,19,22,28]},"ram":{"pct":52.0,"used":8.3,"total":16.0},"gpus":[],"disk":{"pct":71.0,"r":0.4,"w":0.1,"act":null},"net":{"dl":0.35,"ul":0.05},"host":{"name":"Mac","os":"mac","clock":8130}}

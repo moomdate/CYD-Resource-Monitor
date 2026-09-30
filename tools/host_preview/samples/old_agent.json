@@ -1,0 +1,1 @@
+{"cpu":{"load":37.5,"freq":3200.0,"cores":8,"temp":58.0},"ram":{"pct":61.2,"used":9.8,"total":16.0},"gpus":[{"name":"NVIDIA GeForce RTX 3060","load":22.0,"temp":49.0,"vram_used":2.1,"vram_total":12.0,"discrete":true}],"disk":{"pct":54.0,"r":12.5,"w":3.4},"net":{"dl":1.85,"ul":0.22},"host":{"name":"WORKSTATION","os":"win"}}
