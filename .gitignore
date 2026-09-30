@@ -10,3 +10,4 @@ agent/*.spec
 __pycache__/
 .DS_Store
 tools/host_preview/out/
+release/

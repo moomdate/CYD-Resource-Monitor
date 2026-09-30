@@ -50,6 +50,8 @@ import psutil
 
 import hwinfo
 
+__version__ = "2.0.0"      # keep in sync with FW_VERSION in src/config.h and the git tag
+
 IS_WIN = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
@@ -484,7 +486,8 @@ def find_port():
 
 
 def main():
-    ap = argparse.ArgumentParser(description="CYD Resource Monitor agent")
+    ap = argparse.ArgumentParser(description=f"CYD Resource Monitor agent {__version__}")
+    ap.add_argument("--version", action="version", version=f"cyd-monitor-agent {__version__}")
     ap.add_argument("--port", help="serial port (default: auto-detect CH340)")
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between updates")
     ap.add_argument("--lhm", default="http://localhost:8085/data.json",
@@ -516,7 +519,7 @@ def main():
             continue
         try:
             with serial.Serial(port, 115200, timeout=1) as ser:
-                print(f"connected to {port}")
+                print(f"cyd-monitor-agent {__version__}: connected to {port}")
                 while True:
                     line = json.dumps(sampler.sample(), separators=(",", ":")) + "\n"
                     ser.write(line.encode())

@@ -1,5 +1,8 @@
 name: release
 
+# Push a tag like v2.0.0 (or publish a release for it) to build and attach:
+#   firmware for both panel variants (app-only + merged factory image) and SHA256SUMS,
+#   single-file agent binaries for Windows, macOS and Linux.
 on:
   push:
     tags: ["v*"]
@@ -9,26 +12,37 @@ permissions:
 
 jobs:
   firmware:
-    name: firmware (ESP32)
+    name: firmware (ESP32, both panel variants)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Build with PlatformIO
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-release-${{ hashFiles('platformio.ini') }}
+      # esptool (bootloader.bin step) breaks with click >= 8.2; esptool<5 for merge_bin
+      - run: pip install platformio "click<8.2" "esptool<5"
+      - name: Build images
+        run: PY=python tools/make_release.sh release
+      - name: Check the tag matches FW_VERSION
         run: |
-          pip install platformio
-          pio run
-          cp .pio/build/esp32dev/firmware.bin cyd-resource-monitor-firmware.bin
+          v=$(grep -oP 'FW_VERSION "\K[^"]+' src/config.h)
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != FW_VERSION $v"; exit 1; }
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          files: cyd-resource-monitor-firmware.bin
+          files: |
+            release/cyd-resource-monitor-*.bin
+            release/SHA256SUMS.txt
 
   agent:
     name: agent (${{ matrix.os }})
+    needs: firmware              # the firmware job creates the release; avoid parallel creates
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -37,18 +51,22 @@ jobs:
           - os: macos-latest
             out: cyd-monitor-agent-macos
             built: dist/cyd-monitor-agent
+          - os: ubuntu-latest
+            out: cyd-monitor-agent-linux
+            built: dist/cyd-monitor-agent
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Build single-file binary
         shell: bash
         working-directory: agent
         run: |
-          pip install pyinstaller psutil pyserial pynvml
+          pip install pyinstaller psutil pyserial nvidia-ml-py
           pyinstaller --onefile --name cyd-monitor-agent monitor_agent.py
+          "./${{ matrix.built }}" --version
           mv "${{ matrix.built }}" "../${{ matrix.out }}"
       - name: Attach to release
         uses: softprops/action-gh-release@v2

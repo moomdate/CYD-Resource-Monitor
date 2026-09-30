@@ -1,4 +1,5 @@
 #pragma once
+#define FW_VERSION "2.0.0"     // keep in sync with the git tag (v2.0.0) and agent __version__
 
 // ── CYD (ESP32-2432S028R compatible) ───────────────
 #define SCR_W 320

@@ -195,7 +195,7 @@ void setup() {
 
     monitor_ui::begin(pushToTft, kThemes[settings.theme]);
     switchSource(millis());
-    Serial.printf("[monitor] SYSTEM RESEARCH ready: theme %s, source %s, free heap %u\n",
+    Serial.printf("[monitor] SYSTEM RESEARCH v" FW_VERSION " ready: theme %s, source %s, free heap %u\n",
                   kThemes[settings.theme].name, settings.source == SRC_DEMO ? "DEMO" : "PC AGENT",
                   (unsigned)ESP.getFreeHeap());
 }

@@ -99,17 +99,31 @@ This runs on a 2.8" ESP32 display board of the **CYD family** — the pinout mat
 
 ### 1. Flash the firmware
 
+**Easiest — a ready-made image from [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases):** download
+`cyd-resource-monitor-esp32dev-factory.bin` and flash it at address `0x0` (one file contains bootloader, partitions and app):
+
+```bash
+pip install esptool
+esptool --chip esp32 --baud 460800 write_flash 0x0 cyd-resource-monitor-esp32dev-factory.bin
+```
+
+If the colours come out inverted (dark UI shows light), use `cyd-resource-monitor-cyd-noinvert-factory.bin` instead —
+CYD panels come in two variants. Any browser-based ESP flasher that accepts a single image at `0x0` works too.
+If flashing stops with *"Unable to verify flash chip connection"*, lower the baud rate (`--baud 115200`).
+
+**Or build from source** (PlatformIO):
+
 ```bash
 git clone https://github.com/moomdate/CYD-Resource-Monitor.git
 cd CYD-Resource-Monitor
-pio run -t upload
+pio run -t upload                      # or: pio run -e cyd-noinvert -t upload
 ```
 
 Nothing to configure: with no agent running the display shows the OFFLINE banner, and *Settings → DEMO* shows the UI with simulated data.
 
 ### 2. Run the agent on the computer you want to monitor
 
-Grab a prebuilt binary from [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases) — `cyd-monitor-agent-windows.exe` or `cyd-monitor-agent-macos` — or run from source:
+Grab a prebuilt binary from [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases) — `cyd-monitor-agent-windows.exe`, `cyd-monitor-agent-macos` or `cyd-monitor-agent-linux` — or run from source:
 
 ```bash
 cd agent
@@ -229,14 +243,17 @@ CI (`.github/workflows/ci.yml`) runs the native tests, builds both panel variant
 Pushing a `v*` tag builds and attaches everything automatically:
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
+git tag v2.0.0 && git push origin v2.0.0     # the tag must match FW_VERSION in src/config.h
 ```
 
 | Artifact | Built on |
 |---|---|
-| `cyd-monitor-agent-windows.exe` | windows-latest (PyInstaller, no Python needed) |
-| `cyd-monitor-agent-macos` | macos-latest |
-| `cyd-resource-monitor-firmware.bin` | ubuntu-latest (PlatformIO) |
+| `cyd-resource-monitor-<env>-factory.bin` | full image for `0x0` — `esp32dev` (inverted panel) and `cyd-noinvert` |
+| `cyd-resource-monitor-<env>.bin` | app only, for `0x10000` over an existing install |
+| `SHA256SUMS.txt` | checksums of the firmware images |
+| `cyd-monitor-agent-windows.exe` / `-macos` / `-linux` | PyInstaller single-file agent, no Python needed |
+
+`tools/make_release.sh` builds the same firmware images locally.
 
 ## Project structure
 

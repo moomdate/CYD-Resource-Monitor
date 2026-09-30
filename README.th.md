@@ -99,17 +99,31 @@ JSON หนึ่งอ็อบเจกต์ต่อหนึ่งบรร
 
 ### 1. Flash firmware
 
+**ง่ายที่สุด: โหลดไฟล์สำเร็จรูปจาก [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases)** ใช้ไฟล์
+`cyd-resource-monitor-esp32dev-factory.bin` แล้ว flash ที่ address `0x0` ไฟล์เดียวมีทั้ง bootloader, partitions และตัวโปรแกรม:
+
+```bash
+pip install esptool
+esptool --chip esp32 --baud 460800 write_flash 0x0 cyd-resource-monitor-esp32dev-factory.bin
+```
+
+ถ้าสีกลับ (หน้าจอที่ควรมืดกลายเป็นสว่าง) ให้ใช้ `cyd-resource-monitor-cyd-noinvert-factory.bin` แทน เพราะจอ CYD มี 2 แบบ
+ใช้โปรแกรม flash ESP บนเว็บเบราว์เซอร์ที่รับไฟล์เดียวที่ `0x0` ก็ได้
+ถ้า flash แล้วขึ้น *"Unable to verify flash chip connection"* ให้ลดความเร็วลง (`--baud 115200`)
+
+**หรือ build เองจาก source** (PlatformIO):
+
 ```bash
 git clone https://github.com/moomdate/CYD-Resource-Monitor.git
 cd CYD-Resource-Monitor
-pio run -t upload
+pio run -t upload                      # หรือ: pio run -e cyd-noinvert -t upload
 ```
 
 ไม่ต้องตั้งค่าอะไร: ถ้ายังไม่รัน agent จอจะขึ้นแบนเนอร์ OFFLINE และเลือก *Settings → DEMO* เพื่อดู UI ด้วยข้อมูลจำลองได้
 
 ### 2. รัน agent บนเครื่องที่จะมอนิเตอร์
 
-โหลดไฟล์สำเร็จรูปจาก [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases) — `cyd-monitor-agent-windows.exe` หรือ `cyd-monitor-agent-macos` — หรือรันจาก source:
+โหลดไฟล์สำเร็จรูปจาก [Releases](https://github.com/moomdate/CYD-Resource-Monitor/releases) — `cyd-monitor-agent-windows.exe`, `cyd-monitor-agent-macos` หรือ `cyd-monitor-agent-linux` — หรือรันจาก source:
 
 ```bash
 cd agent
@@ -229,14 +243,17 @@ CI (`.github/workflows/ci.yml`) รัน native test, build บอร์ดท�
 push tag ขึ้นต้นด้วย `v` แล้ว GitHub Actions จะ build และแนบไฟล์เข้า Release ให้เอง:
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
+git tag v2.0.0 && git push origin v2.0.0     # tag ต้องตรงกับ FW_VERSION ใน src/config.h
 ```
 
-| ไฟล์ | สร้างบน |
+| ไฟล์ | คืออะไร |
 |---|---|
-| `cyd-monitor-agent-windows.exe` | windows-latest (PyInstaller — ไม่ต้องมี Python) |
-| `cyd-monitor-agent-macos` | macos-latest |
-| `cyd-resource-monitor-firmware.bin` | ubuntu-latest (PlatformIO) |
+| `cyd-resource-monitor-<env>-factory.bin` | image เต็มสำหรับ flash ที่ `0x0` มีทั้ง `esp32dev` (จอที่ต้อง invert) และ `cyd-noinvert` |
+| `cyd-resource-monitor-<env>.bin` | เฉพาะตัวโปรแกรม สำหรับ flash ที่ `0x10000` ทับของเดิม |
+| `SHA256SUMS.txt` | checksum ของไฟล์ firmware |
+| `cyd-monitor-agent-windows.exe` / `-macos` / `-linux` | agent แบบไฟล์เดียวจาก PyInstaller ไม่ต้องมี Python |
+
+`tools/make_release.sh` build firmware ชุดเดียวกันในเครื่องได้
 
 ## โครงสร้างโปรเจค
 
