@@ -63,29 +63,21 @@ static void saveSettings() {   // Preferences only writes keys whose value chang
     prefs.end();
 }
 
-// ---- backlight (PWM on TFT_BL; Arduino-ESP32 core 2.x and 3.x APIs differ) ------------------
+// ---- backlight (see BACKLIGHT_DIMMING in config.h) ----------------------------------------
 static void backlightBegin() {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcAttach(TFT_BL, 5000, 8);
+#if BACKLIGHT_DIMMING
+    ledcAttach(TFT_BL, 5000, 8);           // after tft.init() has driven TFT_BL HIGH
 #else
-    ledcSetup(0, 5000, 8);
-    ledcAttachPin(TFT_BL, 0);
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);            // full on: this board's backlight can't dim with PWM
 #endif
 }
 
-// The CYD's backlight driver is far from linear: 20 % PWM duty looks completely off,
-// which made the lowest BRIGHTNESS step blank the screen. Map the 20..100 % setting
-// onto a duty range that is always visible (20 % -> ~43 % duty, 100 % -> full on).
-static const uint32_t kMinVisibleDuty = 110;
-
 static void setBacklight(uint8_t pct) {
-    if (pct < Settings::kBrightMin) pct = Settings::kBrightMin;
-    uint32_t duty = kMinVisibleDuty + (uint32_t)(pct - Settings::kBrightMin) * (255 - kMinVisibleDuty)
-                                      / (100 - Settings::kBrightMin);
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(TFT_BL, duty);
+#if BACKLIGHT_DIMMING
+    ledcWrite(TFT_BL, (uint32_t)pct * 255 / 100);
 #else
-    ledcWrite(0, duty);
+    (void)pct;
 #endif
 }
 

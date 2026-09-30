@@ -680,6 +680,7 @@ static void test_settings_taps() {
         TEST_ASSERT_EQUAL_INT(settings_ui::ACT_NONE, settings_ui::tap(8 + i * 74 + 35, 202, s));   // same again: no change
     }
 
+#if BACKLIGHT_DIMMING
     // brightness: steps of 20, clamped to 20..100
     s.brightness = 100;
     TEST_ASSERT_EQUAL_INT(settings_ui::ACT_NONE, settings_ui::tap(213, 226, s));           // '+' at max
@@ -690,6 +691,13 @@ static void test_settings_taps() {
     s.brightness = 90;                                                                       // odd value from old NVS
     settings_ui::tap(213, 226, s);
     TEST_ASSERT_EQUAL_UINT8(100, s.brightness);
+#else
+    // brightness row hidden (backlight can't dim on this board): its taps do nothing
+    s.brightness = 100;
+    TEST_ASSERT_EQUAL_INT(settings_ui::ACT_NONE, settings_ui::tap(123, 226, s));
+    TEST_ASSERT_EQUAL_INT(settings_ui::ACT_NONE, settings_ui::tap(213, 226, s));
+    TEST_ASSERT_EQUAL_UINT8(100, s.brightness);
+#endif
 
     // DONE, and a tap on empty space
     TEST_ASSERT_EQUAL_INT(settings_ui::ACT_CLOSE, settings_ui::tap(282, 15, s));

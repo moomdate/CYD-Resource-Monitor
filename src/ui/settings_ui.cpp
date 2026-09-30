@@ -1,4 +1,5 @@
 #include "ui/settings_ui.h"
+#include "config.h"
 #include "ui/canvas.h"
 #include "ui/monitor_ui.h"
 #include "ui/theme.h"
@@ -71,12 +72,14 @@ static void compose(Canvas &cv, const Settings &s, bool agentLive) {
     for (int i = 0; i < SC_COUNT; i++)
         widgets::button(cv, t, scenarioBtn(i), kScenarioLabels[i], i == s.scenario, font_ui);
 
+#if BACKLIGHT_DIMMING
     cv.text(font_sm, 12, 230, "BRIGHTNESS", C(COL_MUTED), ALIGN_LEFT, 1);
     widgets::button(cv, t, R_BRI_DN, "-", false, font_ui);
     char buf[8];
     snprintf(buf, sizeof buf, "%d%%", s.brightness);
     widgets::button(cv, t, R_BRI_V, buf, false, font_ui);
     widgets::button(cv, t, R_BRI_UP, "+", false, font_ui);
+#endif
 }
 
 void draw(const Settings &s, bool agentLive) {
@@ -103,6 +106,7 @@ Action tap(int x, int y, Settings &s) {
         if (inside(sourceBtn(i), x, y) && s.source != i) { s.source = i; a = ACT_CHANGED; }
     for (int i = 0; i < SC_COUNT; i++)
         if (inside(scenarioBtn(i), x, y) && s.scenario != i) { s.scenario = i; a = ACT_CHANGED; }
+#if BACKLIGHT_DIMMING
     if (inside(R_BRI_DN, x, y) && s.brightness > Settings::kBrightMin) {
         s.brightness = s.brightness - Settings::kBrightStep < Settings::kBrightMin ? Settings::kBrightMin
                                                                                    : s.brightness - Settings::kBrightStep;
@@ -112,6 +116,7 @@ Action tap(int x, int y, Settings &s) {
         s.brightness = s.brightness + Settings::kBrightStep > 100 ? 100 : s.brightness + Settings::kBrightStep;
         a = ACT_CHANGED;
     }
+#endif
     return a;
 }
 
