@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""
+gen_font.py - rasterize a .ttf subset into the monitor's own anti-aliased font format.
+
+Why not TFT_eSPI .vlw smooth fonts?  TFT_eSPI blends glyph edges against a single
+text-background colour. This UI draws text over a textured background image, so the
+renderer (src/ui/canvas.cpp) blends each edge pixel against the *actual* pixel under it.
+That needs only: per-glyph metrics + an 8-bit alpha bitmap, which is what this emits.
+
+Usage:
+  python3 gen_font.py <font.ttf|builtin> <px_size> <c_name> <chars> <out.h> [--embolden PX] [--condense F]
+Example:
+  python3 gen_font.py font_src/BarlowCondensed-ExtraBold.ttf 30 font_big "0123456789-" ../src/fonts/font_big.h
+
+"builtin" uses the font that ships inside Pillow (no download needed). To let that
+regular-weight face stand in for a bold, condensed one, --embolden thickens the strokes by
+PX pixels (0.3..0.8 is typical) and --condense F (e.g. 0.8) squeezes it horizontally.
+Regenerate everything with tools/make_fonts.py.
+
+Also importable: load_font() / draw_text() are reused by gen_chrome.py so the baked-in
+labels and the live text use exactly the same glyph shapes.
+Requires Pillow (pip install pillow).
+"""
+import math
+import sys
+
+from PIL import Image, ImageDraw, ImageFont
+
+
+def load_font(ttf, size):
+    """ttf is a path, or 'builtin' for the font bundled with Pillow."""
+    if ttf == "builtin":
+        return ImageFont.load_default(size)
+    return ImageFont.truetype(ttf, size)
+
+
+def advance(font, ch, tracking=0.0, embolden=0.0, condense=1.0):
+    return (font.getlength(ch) + embolden * 2) * condense + tracking
+
+
+def text_width(text, font, tracking=0.0, embolden=0.0, condense=1.0):
+    return sum(advance(font, c, tracking, embolden, condense) for c in text) - (tracking if text else 0)
+
+
+def draw_text(img, xy, text, font, fill, tracking=0.0, embolden=0.0, condense=1.0):
+    """Draw anti-aliased text onto an RGB image; xy is the pen position on the baseline.
+    Supports letter spacing, faux-bold and horizontal condensing (all at sub-pixel accuracy)."""
+    x0, y0 = xy
+    ascent, descent = font.getmetrics()
+    pad = 3
+    raw_w = text_width(text, font, tracking / condense, embolden, 1.0)   # width before squeezing
+    mw = int(raw_w) + 2 * pad + 4
+    mh = ascent + descent + 2 * pad + int(embolden) + 2
+    fx = x0 - math.floor(x0)
+    mask = Image.new("L", (mw, mh), 0)
+    md = ImageDraw.Draw(mask)
+    pen = pad + fx / condense                # after the squeeze the pen lands on the sub-pixel x0
+    for ch in text:
+        md.text((pen, pad + ascent), ch, font=font, fill=255, anchor="ls", stroke_width=embolden, stroke_fill=255)
+        pen += advance(font, ch, tracking / condense, embolden, 1.0)
+    if condense != 1.0:
+        mask = mask.resize((max(1, round(mask.width * condense)), mh), Image.LANCZOS)
+    solid = Image.new("RGB", mask.size, tuple(int(c) for c in fill))
+    img.paste(solid, (int(math.floor(x0)) - pad, int(round(y0)) - pad - ascent), mask)
+
+
+def build(ttf, size, chars, embolden, condense=1.0):
+    font = load_font(ttf, size)
+    glyphs = []   # (code, w, h, dx, dy_top, adv, bytes)
+    pad = int(embolden + 0.999)
+    for ch in sorted(set(chars), key=ord):
+        adv = round((font.getlength(ch) + embolden * 2) * condense)
+        x0, y0, x1, y1 = font.getbbox(ch, anchor="ls", stroke_width=embolden)
+        x0, y0, x1, y1 = int(x0) - pad, int(y0) - pad, int(x1) + pad, int(y1) + pad
+        if ch == " " or x1 <= x0 or y1 <= y0:
+            glyphs.append((ord(ch), 0, 0, 0, 0, adv, b""))
+            continue
+        w, h = x1 - x0, y1 - y0
+        img = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(img).text((-x0, -y0), ch, fill=255, font=font, anchor="ls",
+                                 stroke_width=embolden, stroke_fill=255)
+        if condense != 1.0:
+            w2 = max(1, round(w * condense))
+            img = img.resize((w2, h), Image.LANCZOS)
+            x0, w = round(x0 * condense), w2
+        glyphs.append((ord(ch), w, h, x0, -y0, adv, img.tobytes()))
+    return glyphs
+
+
+def generate(ttf, size, name, chars, out, embolden=0.0, condense=1.0):
+    glyphs = build(ttf, size, chars, embolden, condense)
+    ascent = max(g[4] for g in glyphs)                     # tallest ink above baseline
+    descent = max(g[2] - g[4] for g in glyphs)             # deepest ink below baseline
+
+    bitmap = bytearray()
+    rows = []
+    for code, w, h, dx, dy, adv, data in glyphs:
+        label = chr(code).replace("\\", "backslash")
+        rows.append(f"  {{0x{code:04X}, {w:3d}, {h:3d}, {dx:3d}, {dy:3d}, {adv:3d}, {len(bitmap):6d}}},  // {label}")
+        bitmap += data
+    if not bitmap:
+        bitmap = bytearray(1)
+
+    src = "Pillow builtin" if ttf == "builtin" else ttf.replace("\\", "/").split("/")[-1]
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(f"// {name}: {src} @ {size}px (embolden {embolden}, condense {condense}) - generated by tools/gen_font.py, do not edit.\n")
+        f.write("#pragma once\n#include \"ui/font.h\"\n\n")
+        f.write(f"static const uint8_t {name}_bitmap[{len(bitmap)}] = {{\n")
+        for i in range(0, len(bitmap), 24):
+            f.write("  " + ",".join(str(b) for b in bitmap[i:i + 24]) + ",\n")
+        f.write("};\n\n")
+        f.write(f"static const UiGlyph {name}_glyphs[{len(glyphs)}] = {{\n")
+        f.write("\n".join(rows) + "\n};\n\n")
+        f.write(f"static const UiFont {name} = {{ {name}_glyphs, {name}_bitmap, {len(glyphs)}, {ascent}, {descent} }};\n")
+
+    print(f"{name}: {len(glyphs)} glyphs, ascent {ascent}, descent {descent}, {len(bitmap)} bitmap bytes -> {out}")
+
+
+def main():
+    args = list(sys.argv[1:])
+    embolden, condense = 0.0, 1.0
+    for opt in ("--embolden", "--condense"):
+        if opt in args:
+            i = args.index(opt)
+            v = float(args[i + 1])
+            del args[i:i + 2]
+            if opt == "--embolden":
+                embolden = v
+            else:
+                condense = v
+    if len(args) != 5:
+        print(__doc__)
+        sys.exit(1)
+    generate(args[0], int(args[1]), args[2], args[3], args[4], embolden, condense)
+
+
+if __name__ == "__main__":
+    main()
