@@ -73,8 +73,15 @@ static void backlightBegin() {
 #endif
 }
 
+// The CYD's backlight driver is far from linear: 20 % PWM duty looks completely off,
+// which made the lowest BRIGHTNESS step blank the screen. Map the 20..100 % setting
+// onto a duty range that is always visible (20 % -> ~43 % duty, 100 % -> full on).
+static const uint32_t kMinVisibleDuty = 110;
+
 static void setBacklight(uint8_t pct) {
-    uint32_t duty = (uint32_t)pct * 255 / 100;
+    if (pct < Settings::kBrightMin) pct = Settings::kBrightMin;
+    uint32_t duty = kMinVisibleDuty + (uint32_t)(pct - Settings::kBrightMin) * (255 - kMinVisibleDuty)
+                                      / (100 - Settings::kBrightMin);
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
     ledcWrite(TFT_BL, duty);
 #else
