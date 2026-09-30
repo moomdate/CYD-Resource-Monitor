@@ -58,7 +58,7 @@ class FakePsutil:
         return NET(self.n * 5 * 2**20, self.n * 1 * 2**20)
 
 
-def make_sampler(fake=None):
+def make_sampler(fake=None, hw=None):
     """Sampler with everything that would shell out / touch the OS stubbed."""
     agent.psutil = fake or FakePsutil()
     agent.mac_gpus = lambda: []
@@ -68,8 +68,7 @@ def make_sampler(fake=None):
     agent.linux_sensors = lambda: (None, None, None)
     agent.cpu_name = lambda: "Test CPU"
     agent.host_name = lambda: "testhost"
-    agent.nvidia_gpus = lambda: []
-    return agent.Sampler(None)
+    return agent.Sampler(None, hub=agent.StaticHub(hw))
 
 
 class TestHelpers(unittest.TestCase):
@@ -206,6 +205,31 @@ class TestPayload(unittest.TestCase):
         self.assertNotIn("volt", p["cpu"])
         self.assertNotIn("fan", p["cpu"])
         json.dumps(p, allow_nan=False)
+
+    def test_gpus_from_hub_are_merged_and_rounded(self):
+        hw = {"NvidiaProbe": [{"name": "GeForce RTX 4070", "vendor": "nvidia", "discrete": True, "_strong": True,
+                               "load": 37.4, "temp": 61.2, "vram_used": 3.14, "vram_total": 12.0}],
+              "WinPdhProbe": [{"name": "GeForce RTX 4070", "load": 36.0},
+                              {"name": "Intel UHD Graphics 770", "discrete": False, "load": 2.0}]}
+        p = make_sampler(hw=hw).sample()
+        g0, g1 = p["gpus"]
+        self.assertEqual((g0["name"], g0["load"], g0["temp"], g0["vram_used"]), ("GeForce RTX 4070", 37, 61, 3.1))
+        self.assertEqual(g1["name"], "Intel UHD Graphics 770")
+        self.assertNotIn("temp", g1)                                 # unknown -> omitted, not null
+
+    def test_apple_temps_from_hub(self):
+        hw = {"MacGpuProbe": [{"name": "Apple M1", "load": 23.0}],
+              "MacThermalProbe": {"cpu": 78.9, "gpu": 74.5, "ssd": 58.0}}
+        p = make_sampler(hw=hw).sample()
+        if agent.IS_LINUX:                                           # linux_sensors() owns cpu temp there
+            return
+        self.assertEqual(p["cpu"]["temp"], 78.9)
+        self.assertEqual(p["disk"]["temp"], 58)
+        self.assertEqual(p["gpus"][0]["temp"], 74)
+
+    def test_host_name_is_ascii_for_the_display(self):
+        self.assertEqual(agent.to_ascii("Surasak\u2019s MacBook Air"), "Surasak's MacBook Air")
+        self.assertEqual(agent.to_ascii("Radeon\u2122 \u0e44\u0e17\u0e22"), "Radeon")
 
     def test_many_cores_are_grouped(self):
         s = make_sampler(FakePsutil(per_core=[50.0] * 64))

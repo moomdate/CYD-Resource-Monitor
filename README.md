@@ -116,23 +116,34 @@ python monitor_agent.py          # auto-detects the board's port
 | `--print` | dry run: print JSON to stdout, no board needed |
 | `--interval 1` | slow down updates (default 0.5 s) |
 
-### 3. Unlock more sensors (optional)
+### 3. GPUs and temperatures
 
-| Data | What to do |
+GPU load works for **every vendor out of the box** — no extra installs (see `agent/hwinfo.py`):
+
+| | NVIDIA | AMD | Intel | Apple |
+|---|---|---|---|---|
+| **Windows** | load, VRAM (PDH) · + temp / power / clock / fan with `nvidia-ml-py` | load, VRAM (PDH) · temp with LHM or `pyadl` | load, VRAM (PDH) · temp with LHM | – |
+| **Linux** | full with `nvidia-ml-py` / `nvidia-smi` | load, VRAM, temp, power, fan, clock (amdgpu sysfs) | load (RC6), clock, temp on Arc (i915 / xe sysfs) | – |
+| **macOS** | – | load, VRAM (Intel Macs) | load (Intel Macs) | load + temp (Apple Silicon) |
+
+| Temperatures | How |
 |---|---|
-| NVIDIA GPU load / temp / VRAM | `pip install pynvml` |
-| Windows: CPU temp / **power / voltage / fan**, **drive temp + activity + model**, AMD/Intel GPU | run [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) with Options → Remote Web Server on (agent auto-connects to `localhost:8085`) |
-| macOS: CPU temp | `brew install smctemp` |
-| Linux: CPU / drive temp, fan | works through your lm-sensors kernel drivers (psutil) — experimental, not tested on a real Linux box yet |
+| macOS Apple Silicon: CPU, GPU, SSD | built in (IOHID sensors, no sudo) |
+| macOS Intel: CPU | `brew install smctemp` |
+| Linux: CPU, drive, AMD GPU | built in (lm-sensors kernel drivers via psutil, amdgpu hwmon) |
+| Windows: CPU / GPU / drive temps, CPU **power / voltage / fan**, drive activity | run [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) with Options → Remote Web Server on (agent auto-connects to `localhost:8085`) — Windows needs a kernel driver for these |
 
-What each OS can provide:
+Optional installs: `pip install nvidia-ml-py` (NVIDIA detail), `pip install pyadl` (AMD temp on Windows without LHM).
+The slow probes run on a background thread, so the 2 Hz stream never waits on them; the whole agent uses about 0.7 % of one core (measured on an M1).
+
+What each OS can provide (besides GPUs):
 
 | | Windows (+ LHM) | Windows (no LHM) | macOS | Linux |
 |---|---|---|---|---|
 | CPU load, per-core, clock, RAM, network, read/write | ✅ | ✅ | ✅ | ✅ |
-| CPU temperature | ✅ | – | with `smctemp` | if sensors exist |
+| CPU temperature | ✅ | – | ✅ Apple Silicon · `smctemp` on Intel | if sensors exist |
 | CPU power / voltage / fan | ✅ if the sensor exists | – | – | fan only |
-| Drive temperature / model | ✅ | – | model | ✅ |
+| Drive temperature / model | ✅ | – | ✅ Apple Silicon / model | ✅ |
 | NVMe activity % | ✅ real | ~ estimate | ~ estimate | ✅ real |
 
 "Estimate" = throughput relative to the highest throughput seen since the agent started (at least 150 MiB/s) — a hint of how busy the drive is, not a measurement. Everything not available shows `--` on the display; the agent never sends `null`/`NaN`.
@@ -177,7 +188,7 @@ Run `./cyd-monitor-agent-macos` (first time: right-click → Open, because it's 
 
 The agent has a built-in reconnect loop — unplugging the board, replugging it, or rebooting the display never requires restarting the agent. It just reconnects.
 
-> ⚠️ **macOS limitation**: Apple locks GPU-load counters behind sudo-only APIs on Apple Silicon, so GPU load shows `--` on Macs (only visible on the GPU history page). CPU power / voltage / fan are also unavailable there. Windows gets the full picture with LibreHardwareMonitor running.
+> **macOS**: GPU load and CPU / GPU / SSD temperatures work without sudo on Apple Silicon. CPU power / voltage / fan are not available there. Windows gets the full picture with LibreHardwareMonitor running.
 
 ## Development
 
@@ -240,7 +251,7 @@ test/test_native/          # host unit tests
 <a id="status"></a>
 ## What has not been tested on hardware
 
-This UI was developed without a board attached. Verified: firmware builds for both panel variants, 36 host unit tests, renders of every screen. **Not verified on a real CYD**: actual frame rate and SPI throughput, colour and contrast on the ILI9341 (the art is unmodified design colours; TFT panels look flatter than a monitor), touch hit accuracy on the small buttons, backlight PWM, NVS persistence, and long-run serial behaviour. The agent's new sensor code is tested against synthetic LibreHardwareMonitor data and a fake `psutil`, not on real Windows / Linux machines.
+Tested on a real CYD: boots, ~29 fps, partial redraws, live data from the agent on macOS (M1), touch and theme switching. Found on the hardware: this board's backlight goes dark with any PWM duty below 100 %, so the backlight is driven full-on and BRIGHTNESS is hidden (`BACKLIGHT_DIMMING` in `config.h`). The agent is tested live on macOS (Apple Silicon: GPU load, CPU / GPU / SSD temps) and with recorded / synthetic data for NVIDIA (NVML, nvidia-smi), AMD and Intel (Linux sysfs), Windows PDH counters and LibreHardwareMonitor. **Not yet run on a real Windows or Linux PC.**
 
 ## License
 

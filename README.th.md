@@ -116,23 +116,34 @@ python monitor_agent.py          # หา port ของบอร์ดเอง
 | `--print` | ทดสอบพิมพ์ JSON โดยไม่ต้องต่อบอร์ด |
 | `--interval 1` | ปรับความถี่ส่ง (ค่าเริ่มต้น 0.5 วินาที) |
 
-### 3. ปลดล็อกข้อมูลเพิ่ม (ตามเครื่อง)
+### 3. การ์ดจอ (GPU) และอุณหภูมิ
 
-| ข้อมูล | ต้องทำอะไร |
+อ่าน GPU load ได้**ทุกค่ายโดยไม่ต้องติดตั้งอะไรเพิ่ม** (โค้ดอยู่ใน `agent/hwinfo.py`)
+
+| | NVIDIA | AMD | Intel | Apple |
+|---|---|---|---|---|
+| **Windows** | load, VRAM (PDH) · ได้ temp / power / clock / fan เพิ่มถ้าลง `nvidia-ml-py` | load, VRAM (PDH) · temp ต้องมี LHM หรือ `pyadl` | load, VRAM (PDH) · temp ต้องมี LHM | – |
+| **Linux** | ครบ ถ้ามี `nvidia-ml-py` หรือ `nvidia-smi` | load, VRAM, temp, power, fan, clock (amdgpu sysfs) | load (RC6), clock, temp เฉพาะ Arc (i915 / xe sysfs) | – |
+| **macOS** | – | load, VRAM (Mac ชิป Intel) | load (Mac ชิป Intel) | load + temp (Apple Silicon) |
+
+| อุณหภูมิ | ทำยังไง |
 |---|---|
-| การ์ด NVIDIA (load/temp/VRAM) | `pip install pynvml` |
-| Windows: อุณหภูมิ CPU / **power / voltage / fan**, **อุณหภูมิ + activity + รุ่นของไดรฟ์**, การ์ด AMD/Intel | รัน [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) เปิด Options → Remote Web Server (agent ต่อ `localhost:8085` ให้เอง) |
-| macOS: อุณหภูมิ CPU | `brew install smctemp` |
-| Linux: อุณหภูมิ CPU / ไดรฟ์, พัดลม | อ่านผ่านไดรเวอร์ lm-sensors (psutil) — ยังเป็นแบบทดลอง ยังไม่ได้ทดสอบบนเครื่อง Linux จริง |
+| macOS Apple Silicon: CPU, GPU, SSD | ได้เลย (เซ็นเซอร์ IOHID ไม่ต้องใช้ sudo) |
+| macOS ชิป Intel: CPU | `brew install smctemp` |
+| Linux: CPU, ไดรฟ์, การ์ด AMD | ได้เลย (ผ่าน lm-sensors / psutil และ amdgpu hwmon) |
+| Windows: อุณหภูมิ CPU / GPU / ไดรฟ์, CPU **power / voltage / fan**, activity ของไดรฟ์ | รัน [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) เปิด Options → Remote Web Server (agent ต่อ `localhost:8085` ให้เอง) เพราะ Windows ต้องใช้ kernel driver ถึงจะอ่านค่าพวกนี้ได้ |
 
-แต่ละ OS ให้ข้อมูลอะไรได้บ้าง:
+ติดตั้งเพิ่มได้ถ้าต้องการ: `pip install nvidia-ml-py` (รายละเอียดการ์ด NVIDIA), `pip install pyadl` (อุณหภูมิการ์ด AMD บน Windows ที่ไม่มี LHM)
+ส่วนที่อ่านช้าแยกไปทำใน thread เบื้องหลัง การส่งข้อมูล 2 ครั้งต่อวินาทีจึงไม่ต้องรอ ทั้ง agent ใช้ CPU ราว 0.7% ของ 1 core (วัดบน M1)
+
+นอกจาก GPU แต่ละระบบให้ข้อมูลอะไรได้บ้าง:
 
 | | Windows (+ LHM) | Windows (ไม่มี LHM) | macOS | Linux |
 |---|---|---|---|---|
-| CPU load, รายคอร์, clock, RAM, เครือข่าย, read/write | ✅ | ✅ | ✅ | ✅ |
-| อุณหภูมิ CPU | ✅ | – | ต้องมี `smctemp` | ถ้ามี sensor |
+| CPU load, แต่ละ core, clock, RAM, network, read/write | ✅ | ✅ | ✅ | ✅ |
+| อุณหภูมิ CPU | ✅ | – | ✅ Apple Silicon · Intel ต้องมี `smctemp` | ถ้ามี sensor |
 | CPU power / voltage / fan | ✅ ถ้ามี sensor | – | – | เฉพาะ fan |
-| อุณหภูมิ / รุ่นของไดรฟ์ | ✅ | – | รุ่น | ✅ |
+| อุณหภูมิ / รุ่นของไดรฟ์ | ✅ | – | ✅ Apple Silicon / รุ่น | ✅ |
 | NVMe activity % | ✅ ค่าจริง | ~ ประมาณการ | ~ ประมาณการ | ✅ ค่าจริง |
 
 "ประมาณการ" = ความเร็วอ่าน/เขียนเทียบกับค่าสูงสุดที่เคยเห็นตั้งแต่ agent เริ่มทำงาน (ขั้นต่ำ 150 MiB/s) ใช้ดูคร่าวๆ ว่าไดรฟ์ยุ่งแค่ไหน ไม่ใช่ค่าที่วัดจริง ข้อมูลที่ไม่มีจะขึ้น `--` บนจอ และ agent ไม่เคยส่ง `null`/`NaN`
@@ -177,7 +188,7 @@ python monitor_agent.py          # หา port ของบอร์ดเอง
 
 Agent มี reconnect loop ในตัว — ถอดบอร์ด เสียบใหม่ หรือจอรีบูต **ไม่ต้องรัน agent ซ้ำ** มันต่อกลับให้เอง
 
-> ⚠️ **ข้อจำกัด macOS**: Apple ล็อกการอ่าน GPU load บน Apple Silicon ไว้หลัง API ที่ต้องใช้ sudo จอจึงแสดง GPU load เป็น `--` บน Mac (เห็นได้เฉพาะหน้าประวัติ GPU) และไม่มี CPU power / voltage / fan ด้วย ส่วน Windows ได้ครบทุกอย่างถ้ารัน LibreHardwareMonitor
+> **macOS**: บน Apple Silicon อ่าน GPU load และอุณหภูมิ CPU / GPU / SSD ได้โดยไม่ต้องใช้ sudo แต่ไม่มี CPU power / voltage / fan ส่วน Windows ได้ครบทุกอย่างถ้ารัน LibreHardwareMonitor
 
 ## สำหรับนักพัฒนา
 
@@ -240,7 +251,7 @@ test/test_native/          # unit test บนเครื่อง
 <a id="status"></a>
 ## สิ่งที่ยังไม่ได้ทดสอบกับบอร์ดจริง
 
-UI นี้พัฒนาโดยไม่ได้ต่อบอร์ด ที่ตรวจแล้ว: firmware build ผ่านทั้งสองแบบ, unit test บนเครื่อง 36 ข้อ, ภาพเรนเดอร์ของทุกหน้าจอ **ที่ยังไม่ได้ตรวจบน CYD จริง**: เฟรมเรตและความเร็ว SPI จริง, สีและคอนทราสต์บน ILI9341 (อาร์ตใช้สีตามดีไซน์ตรงๆ จอ TFT ดูจืดกว่าจอคอมพิวเตอร์), ความแม่นยำการแตะปุ่มเล็กๆ, PWM ของ backlight, การเก็บค่าใน NVS และพฤติกรรม serial ระยะยาว โค้ดอ่าน sensor ใหม่ของ agent ทดสอบกับข้อมูล LibreHardwareMonitor สังเคราะห์และ `psutil` ปลอม ยังไม่ได้ลองบนเครื่อง Windows / Linux จริง
+เทสบน CYD จริงแล้ว: บูตได้, ราว 29 fps, วาดใหม่เฉพาะส่วนที่เปลี่ยน, รับข้อมูลจริงจาก agent บน macOS (M1), ทัชและการเปลี่ยนธีม สิ่งที่เจอบนบอร์ดจริง: ไฟหลังจอของบอร์ดนี้ดับทันทีเมื่อหรี่ด้วย PWM ต่ำกว่า 100% จึงตั้งให้เปิดไฟเต็มตลอดและซ่อนปุ่ม BRIGHTNESS (`BACKLIGHT_DIMMING` ใน `config.h`) ส่วน agent เทสกับเครื่องจริงบน macOS แล้ว (Apple Silicon: GPU load, อุณหภูมิ CPU / GPU / SSD) และเทสด้วยข้อมูลจำลองสำหรับ NVIDIA (NVML, nvidia-smi), AMD และ Intel (Linux sysfs), ตัวนับ PDH ของ Windows และ LibreHardwareMonitor **ยังไม่ได้รันบน PC Windows หรือ Linux จริง**
 
 ## สัญญาอนุญาต
 

@@ -9,18 +9,22 @@ to the ESP32 display. Works on Windows, macOS and Linux.
   python monitor_agent.py --port COM5   # explicit port
   python monitor_agent.py --print       # dry run: print JSON, no serial
 
-Optional richer data (every field is optional - the display shows "--" for what is missing):
-  - NVIDIA GPUs:            pip install pynvml
-  - Windows CPU power / voltage / fan, drive temp + activity, AMD/Intel GPU:
+GPU and temperature sources are in hwinfo.py (every field is optional - the display shows
+"--" for what is missing). Out of the box, with no extras:
+  - GPU load, any vendor:   Windows (PDH counters), Linux (amdgpu / i915 / xe sysfs), macOS (ioreg)
+  - temperatures:           macOS Apple Silicon (CPU, GPU, SSD), Linux (psutil + amdgpu hwmon)
+Optional extras for more:
+  - NVIDIA (temp, power, clock, fan, VRAM): pip install nvidia-ml-py  (or nvidia-smi on PATH)
+  - Windows temps (CPU / GPU / drive), CPU power / voltage / fan, drive activity:
                             run LibreHardwareMonitor with Options > Remote Web Server
                             enabled (default http://localhost:8085)
-  - macOS CPU temp:         install `smctemp` (brew install smctemp)
-  - Linux CPU / drive temps and fans come from psutil's sensors (lm-sensors drivers)
+  - Windows AMD GPU temp without LibreHardwareMonitor: pip install pyadl
+  - Intel Mac CPU temp:     brew install smctemp
 
 Protocol (one JSON object per line, all keys but "cpu"/"ram"/"net"/"disk" optional):
   cpu   {load, freq, cores, temp, name, power, volt, fan, per_core[<=16]}
   ram   {pct, used, total}
-  gpus  [{name, load, temp, vram_used, vram_total, discrete}]
+  gpus  [{name, load, temp, vram_used, vram_total, discrete, power, clock, fan}]   (<= 2, discrete first)
   disk  {pct, act, r, w, temp, model}      pct = capacity used, act = busy %, r/w = MiB/s
   net   {dl, ul}                           MiB/s
   host  {name, os, clock}                  clock = local seconds since midnight
@@ -44,46 +48,13 @@ import time
 
 import psutil
 
+import hwinfo
+
 IS_WIN = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
 
 MAX_CORES = 16   # the display draws at most this many per-core bars
-
-# ── NVIDIA via pynvml (optional) ───────────────────────────────
-try:
-    import pynvml
-    pynvml.nvmlInit()
-    NVML = True
-except Exception:
-    NVML = False
-
-
-def nvidia_gpus():
-    gpus = []
-    if not NVML:
-        return gpus
-    try:
-        for i in range(pynvml.nvmlDeviceGetCount()):
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
-            name = pynvml.nvmlDeviceGetName(h)
-            if isinstance(name, bytes):
-                name = name.decode()
-            util = pynvml.nvmlDeviceGetUtilizationRates(h)
-            mem = pynvml.nvmlDeviceGetMemoryInfo(h)
-            temp = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
-            gpus.append({
-                "name": name[:24],
-                "load": float(util.gpu),
-                "temp": float(temp),
-                "vram_used": round(mem.used / 2**30, 1),
-                "vram_total": round(mem.total / 2**30, 1),
-                "discrete": True,
-            })
-    except Exception:
-        pass
-    return gpus
-
 
 # ── LibreHardwareMonitor web server (optional, Windows) ────────
 # LHM's data.json is a tree: computer > hardware (CPU, GPU, drive...) > sensor group > sensor.
@@ -181,16 +152,20 @@ def lhm_extract(flat):
         if unit == "%" and "total activity" in last:
             d["act"] = v
 
-    # AMD / Intel GPUs: hardware nodes with a GPU icon or GPU-ish name (NVIDIA is handled by pynvml)
+    # GPUs of every vendor: hardware nodes with a GPU icon or GPU-ish name. NVIDIA cards also come
+    # from NVML with more detail; hwinfo.merge_gpus() folds the two readings of one card together.
     gpu_names = []
     for path, v, unit, kind, hw in flat:
         low = hw.lower()
-        if not hw or hw in gpu_names or kind == "cpu" or "nvidia" in low:
+        if not hw or hw in gpu_names or kind == "cpu":
             continue
-        if kind == "ati" or any(k in low for k in ("radeon", "graphics", "gpu")):
+        if kind in ("ati", "nvidia") or any(k in low for k in ("radeon", "geforce", "graphics", "gpu", " arc")):
             gpu_names.append(hw)
     for name in gpu_names:
-        g = {"name": name[:24], "discrete": not ("intel" in name.lower() and "uhd" in name.lower())}
+        low = name.lower()
+        integrated = ("intel" in low and "arc" not in low) or ("radeon" in low and "graphics" in low
+                                                                and " rx " not in f" {low} ")
+        g = {"name": hwinfo.short_gpu_name(name), "discrete": not integrated}
         for path, v, unit, kind, hw in flat:
             if hw != name:
                 continue
@@ -204,35 +179,6 @@ def lhm_extract(flat):
 
 
 # ── macOS helpers ──────────────────────────────────────────────
-def mac_gpus():
-    gpus = []
-    try:
-        r = subprocess.run(
-            ["system_profiler", "-json", "SPDisplaysDataType"],
-            capture_output=True, text=True, timeout=10)
-        data = json.loads(r.stdout).get("SPDisplaysDataType", [])
-        for d in data:
-            name = d.get("sppci_model", "GPU")
-            bus = str(d.get("sppci_bus", ""))
-            gpus.append({
-                "name": name[:24],
-                "discrete": "pcie" in bus.lower() or "spdisplays_pcie" in bus.lower(),
-            })
-    except Exception:
-        pass
-    return gpus
-
-
-def mac_cpu_temp():
-    if not shutil.which("smctemp"):
-        return None
-    try:
-        r = subprocess.run(["smctemp", "-c"], capture_output=True, text=True, timeout=2)
-        return float(r.stdout.strip())
-    except Exception:
-        return None
-
-
 def mac_disk_model():
     try:
         r = subprocess.run(["system_profiler", "-json", "SPNVMeDataType"],
@@ -303,6 +249,15 @@ def linux_disk_model():
 
 
 # ── identity helpers ───────────────────────────────────────────
+_ASCII_MAP = {"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-",
+              "\u00a0": " ", "\u2122": "", "\u00ae": ""}
+
+
+def to_ascii(s):
+    """The display's fonts are ASCII: 'Surasak\u2019s MacBook' -> "Surasak's MacBook"."""
+    s = "".join(_ASCII_MAP.get(c, c) for c in (s or ""))
+    return "".join(c for c in s if 32 <= ord(c) < 127).strip()
+
 def clean_cpu_name(raw):
     """'AMD Ryzen 7 7800X3D 8-Core Processor' -> 'AMD Ryzen 7 7800X3D' (fits the display)."""
     s = re.sub(r"\((?:R|TM)\)", "", raw or "", flags=re.I)
@@ -331,19 +286,19 @@ def cpu_name():
                         break
     except Exception:
         pass
-    return clean_cpu_name(raw or platform.processor())
+    return clean_cpu_name(to_ascii(raw or platform.processor()))
 
 
 def host_name():
-    name = socket.gethostname().split(".")[0]
+    name = to_ascii(socket.gethostname().split(".")[0])
     if name and not name.isdigit():
         return name[:20]
     if IS_MAC:  # hostname can be an IP on some networks; ask macOS directly
         try:
             r = subprocess.run(["scutil", "--get", "ComputerName"],
                                capture_output=True, text=True, timeout=2)
-            if r.stdout.strip():
-                return r.stdout.strip()[:20]
+            if to_ascii(r.stdout):
+                return to_ascii(r.stdout)[:20]
         except Exception:
             pass
     return "Mac" if IS_MAC else "PC"
@@ -390,13 +345,38 @@ def clean(obj):
 
 
 # ── payload assembly ───────────────────────────────────────────
+class StaticHub:
+    """Stand-in for hwinfo.HardwareHub with fixed readings (tests, --no-hw)."""
+
+    def __init__(self, snapshot=None):
+        self.data = snapshot or {}
+
+    def snapshot(self):
+        return dict(self.data)
+
+
+def gpu_payload(g):
+    """Round a merged GPU dict for the wire; unknown fields are dropped later by clean()."""
+    r = lambda v, n=0: None if v is None else round(float(v), n)   # noqa: E731
+    return {"name": to_ascii(g.get("name"))[:23] or "GPU", "load": r(g.get("load")), "temp": r(g.get("temp")),
+            "vram_used": r(g.get("vram_used"), 1), "vram_total": r(g.get("vram_total"), 1),
+            "discrete": bool(g.get("discrete")), "power": r(g.get("power"), 1),
+            "clock": r(g.get("clock")), "fan": r(g.get("fan"))}
+
+
 class Sampler:
-    def __init__(self, lhm_url):
+    def __init__(self, lhm_url, hub=None):
         self.lhm_url = lhm_url
+        if hub is None:
+            extra = {}
+            if IS_WIN and lhm_url:
+                extra["lhm"] = (lambda: lhm_extract(lhm_fetch(lhm_url)), 2.0)
+            hub = hwinfo.HardwareHub(hwinfo.default_probes(), extra)
+            hub.start()                         # slow probes run on their own thread
+        self.hub = hub
         self.prev_disk = psutil.disk_io_counters()
         self.prev_net = psutil.net_io_counters()
         self.prev_t = time.time()
-        self.static_mac_gpus = mac_gpus() if IS_MAC else []
         self.cpu_name = cpu_name()
         self.host = host_name()
         self.estimator = ActivityEstimator()
@@ -431,27 +411,30 @@ class Sampler:
         cpu_temp = cpu_power = cpu_volt = cpu_fan = None
         disk_temp = disk_act = None
         disk_model = self.disk_model
-        gpus = nvidia_gpus()
+        hw = self.hub.snapshot()                # latest background readings, never blocks
+        lhm = hw.get("lhm") or {}
 
-        if IS_WIN and self.lhm_url:
-            lhm = lhm_extract(lhm_fetch(self.lhm_url))
-            cpu_temp, cpu_power = lhm["cpu_temp"], lhm["cpu_power"]
-            cpu_volt, cpu_fan = lhm["cpu_volt"], lhm["cpu_fan"]
-            disk_temp = lhm["disk"].get("temp")
-            disk_act = lhm["disk"].get("act")
-            disk_model = lhm["disk"].get("name") or disk_model
-            gpus += lhm["gpus"]
-        if IS_MAC:
-            cpu_temp = mac_cpu_temp()
-            if not gpus:
-                gpus = list(self.static_mac_gpus)
+        if lhm:
+            cpu_temp, cpu_power = lhm.get("cpu_temp"), lhm.get("cpu_power")
+            cpu_volt, cpu_fan = lhm.get("cpu_volt"), lhm.get("cpu_fan")
+            disk_temp = (lhm.get("disk") or {}).get("temp")
+            disk_act = (lhm.get("disk") or {}).get("act")
+            disk_model = (lhm.get("disk") or {}).get("name") or disk_model
         if IS_LINUX:
             cpu_temp, cpu_fan, disk_temp = linux_sensors()
+        mac_t = hw.get("MacThermalProbe") or {}
+        if mac_t:
+            cpu_temp = mac_t.get("cpu", cpu_temp)
+            disk_temp = mac_t.get("ssd", disk_temp)
+
+        # best source first; later ones only fill what is missing (see hwinfo.merge_gpus)
+        gpus = hwinfo.merge_gpus(hw.get("NvidiaProbe"), lhm.get("gpus"), hw.get("AdlProbe"),
+                                 hw.get("LinuxDrmProbe"), hw.get("WinPdhProbe"), hw.get("MacGpuProbe"))
+        if gpus and mac_t.get("gpu") is not None and gpus[0].get("temp") is None:
+            gpus[0]["temp"] = mac_t["gpu"]          # Apple GPU temp comes from the SoC sensors
 
         if disk_act is None:
             disk_act = busy if busy is not None else self.estimator.update(disk_r + disk_w)
-
-        gpus.sort(key=lambda g: not g.get("discrete", False))  # discrete first
 
         per = psutil.cpu_percent(percpu=True)
         lt = time.localtime()
@@ -472,14 +455,14 @@ class Sampler:
                 "used": round(vm.used / 2**30, 1),
                 "total": round(vm.total / 2**30, 1),
             },
-            "gpus": gpus[:2],
+            "gpus": [gpu_payload(g) for g in gpus[:2]],
             "disk": {
                 "pct": round(du.percent, 1),
                 "act": round(disk_act, 0),
                 "r": round(disk_r, 1),
                 "w": round(disk_w, 1),
                 "temp": round(disk_temp, 0) if disk_temp is not None else None,
-                "model": (disk_model or "")[:23] or None,
+                "model": to_ascii(disk_model)[:23] or None,
             },
             "net": {"dl": round(net_dl, 2), "ul": round(net_ul, 2)},
             "host": {"name": self.host,

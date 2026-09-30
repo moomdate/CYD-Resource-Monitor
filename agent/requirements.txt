@@ -1,4 +1,5 @@
 psutil>=5.9
 pyserial>=3.5
-# optional — NVIDIA GPU stats:
-# pynvml>=11.5
+# optional, more GPU / sensor detail (see the table in README.md):
+# nvidia-ml-py>=12.0     NVIDIA: temp, power, clock, fan, VRAM (nvidia-smi on PATH also works)
+# pyadl>=0.1             Windows AMD: GPU temp without LibreHardwareMonitor
