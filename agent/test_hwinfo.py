@@ -4,6 +4,7 @@ Every vendor / OS path is exercised with recorded or synthetic data, so the pars
 checked on any machine. test_live_* run only where the real hardware API exists.
 """
 import os
+import platform
 import sys
 import tempfile
 import time
@@ -217,7 +218,7 @@ class TestLiveMac(unittest.TestCase):
         g = hwinfo.MacGpuProbe().read()
         self.assertTrue(g and 0.0 <= g[0]["load"] <= 100.0, g)
 
-    @unittest.skipUnless(os.uname().machine == "arm64", "Apple Silicon only")
+    @unittest.skipUnless(platform.machine() == "arm64", "Apple Silicon only")
     def test_live_temps(self):
         t = hwinfo.MacThermalProbe().read()
         self.assertTrue(20.0 < t.get("cpu", 0) < 110.0, t)
