@@ -1,30 +1,35 @@
-# 📊 CYD Resource Monitor
+# 📊 CYD Resource Monitor — SYSTEM RESEARCH / NODE 01
 
 [English](README.md) · **ภาษาไทย**
 
 จอมอนิเตอร์ทรัพยากรเครื่อง PC/Mac บน **บอร์ด ESP32 พร้อมจอทัช 2.8 นิ้ว ราคาหลักร้อย** (ตระกูล CYD "Cheap Yellow Display") — สาย USB เส้นเดียวได้ทั้งไฟและข้อมูล ไม่ต้องตั้งค่า WiFi ไม่ต้องต่อสายเพิ่ม ไม่ต้องลง driver
 
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32-orange)
-![Agent](https://img.shields.io/badge/agent-Windows%20%7C%20macOS-blue)
+![Agent](https://img.shields.io/badge/agent-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-<!-- ภาพตัวอย่าง: วางรูปใน images/ ตามชื่อไฟล์นี้ -->
-![Dashboard](images/dashboard.jpg)
+![Dashboard](images/dashboard.png)
 
-| | |
-|---|---|
-| ![Detail](images/detail.jpg) | ![Settings](images/settings.jpg) |
-| แตะ tile ไหนก็ได้ → กราฟย้อนหลัง 60 วินาที พร้อม MIN / AVG / MAX | เลือก tile, ธีม และแถบ RGB — บันทึกลง flash ถาวร |
+> ภาพในไฟล์นี้เป็น **ภาพที่เรนเดอร์จากโค้ด UI จริงของ firmware** ที่คอมไพล์บนคอมพิวเตอร์ (`tools/host_preview`) ไม่ใช่รูปถ่ายบอร์ด ดู [สิ่งที่ยังไม่ได้ทดสอบกับบอร์ดจริง](#status)
+
+| ICE / LIME | VIOLET | AMBER |
+|---|---|---|
+| ![ICE](images/theme-ice.png) | ![VIOLET](images/theme-violet.png) | ![AMBER](images/theme-amber.png) |
+
+| | | |
+|---|---|---|
+| ![Detail](images/detail.png) | ![Settings](images/settings.png) | ![Offline](images/offline.png) |
+| แตะแผงไหนก็ได้ → กราฟย้อนหลัง 60 วินาที พร้อม MIN / AVG / MAX | ธีม, แหล่งข้อมูล, โหมดเดโม, ความสว่าง — บันทึกลง flash | agent ไม่ทำงาน → ขึ้นสถานะ OFFLINE ชัดเจน |
 
 ## ฟีเจอร์
 
-- **Dashboard** — tile CPU / GPU / RAM / TEMP / DISK / NET พร้อมเกจโดนัท, sparkline แบบ area-fill, layout ปรับอัตโนมัติตามจำนวน tile ที่เปิด (1–6)
-- **ธีม 4 แบบ** สลับได้บนจอเลย: `CYBER` (neon บนดำ), `SYNTHWAVE` (ม่วง/ชมพู/ส้ม), `MATRIX` (เขียวล้วน), `LIGHT` (โหมดสว่าง)
-- **แถบ RGB วิ่ง** ใต้ header สไตล์เมนบอร์ดเกมมิ่ง — ปิดได้ในหน้า Settings ถ้าไม่ชอบ
-- tile ไหนโหลดเกิน 85% **ขอบกระพริบแดง** เตือน
-- **หน้า Detail** — แตะ tile เพื่อดูกราฟ 60 วินาที, MIN/AVG/MAX, ชื่อ GPU, สถานะการ์ดแยก/ออนบอร์ด, VRAM
-- **ตรวจจับการ์ดจอแยก** — agent ส่ง GPU ทุกตัวที่เจอ เรียงการ์ดแยกขึ้นก่อน
-- การตั้งค่าทั้งหมดเก็บใน NVS flash ไม่หายแม้ถอดไฟ
+- **หน้าจอ "SYSTEM RESEARCH"** (ดีไซน์อยู่ใน [`research-monitor/`](research-monitor/)) — header แสดงชื่อ node สถานะการเชื่อมต่อ และนาฬิกาของเครื่อง PC; **CPU** วงแหวนแสดง load %, อุณหภูมิ, **แท่ง load รายคอร์** และแถว clock / power / voltage / fan; **หน่วยความจำ** เป็นแถบแบ่งช่อง; **เครือข่าย** RX/TX หน่วย Mbps พร้อมกราฟเลื่อน; **NVMe** วงแหวน activity พร้อม read / write / อุณหภูมิไดรฟ์
+- **ธีม 3 แบบ** ตามดีไซน์ — `ICE / LIME`, `VIOLET`, `AMBER` — สลับบนจอได้ และบันทึกลง flash
+- **ข้อมูลตรงไปตรงมา**: ค่าไหนที่ PC ไม่ส่งมา หรือเก่าเกิน 2.5 วินาที จะแสดง `--` ถ้า agent หยุด header จะเป็นสีแดงและขึ้นแบนเนอร์ **OFFLINE / WAITING FOR AGENT** แล้วหายเองเมื่อข้อมูลกลับมา
+- **โหมดเดโม** (Settings → DATA SOURCE → DEMO): ตัวจำลองในเครื่อง มีพรีเซ็ต IDLE / GAMING / TRANSFER ตามดีไซน์ หรือ CYCLE วนไปเรื่อยๆ — ไม่ต้องมี PC
+- **หน้าประวัติ** — แตะ CPU / RAM / NET / NVMe เพื่อดูกราฟ 60 วินาที, MIN / AVG / MAX; ปุ่มลูกศรไปต่อที่อุณหภูมิ CPU และ **GPU load** (ชื่อ GPU, อุณหภูมิ, VRAM) ซึ่งเลย์เอาต์หลักไม่มีแผงให้
+- **ไม่กระพริบ**: เฟรมและป้ายที่ไม่เปลี่ยนถูกเรนเดอร์ไว้ใน flash ล่วงหน้า วาดเฉพาะ widget สด และแต่ละส่วนจะถูกวาดใหม่ **เฉพาะเมื่อค่าเปลี่ยน** (หน้าจอนิ่งๆ ไม่ส่งพิกเซลเลย) ไม่ใช้ buffer เต็มจอ เพราะ CYD ไม่มี PSRAM
+- ปรับ **ความสว่าง** ได้ และการตั้งค่าทั้งหมดเก็บใน NVS flash ไม่หายแม้ถอดไฟ
 
 ## สถาปัตยกรรม
 
@@ -35,7 +40,35 @@
 └─────────────┘                      └──────────────┘
 ```
 
-โปรโตคอลเป็น line-delimited JSON ที่ไม่ผูกกับ transport — อนาคตจะเปลี่ยนไปส่งผ่าน WebSocket ก็ได้โดยไม่ต้องแก้ format และไม่ต้องลง driver ใดๆ เพราะชิป CH340 บนบอร์ดรองรับในตัวทั้ง macOS (Big Sur ขึ้นไป) และ Windows 10/11
+โปรโตคอลเป็น line-delimited JSON ที่ไม่ผูกกับ transport ไม่ต้องลง driver ใดๆ เพราะชิป CH340 บนบอร์ดรองรับในตัวทั้ง macOS (Big Sur ขึ้นไป) และ Windows 10/11
+
+### โปรโตคอล
+
+JSON หนึ่งอ็อบเจกต์ต่อหนึ่งบรรทัด ทุก key ยกเว้นอ็อบเจกต์ระดับบน 4 ตัวเป็น optional — ถ้าไม่มี firmware จะแสดง `--` และไม่พังเมื่อ field หาย
+
+```json
+{"cpu":{"load":68,"freq":4720,"cores":16,"temp":64,"name":"AMD Ryzen 7 7800X3D","power":82.4,"volt":1.081,"fan":1236,"per_core":[72,61,69,63]},
+ "ram":{"pct":38.8,"used":12.4,"total":32.0},
+ "gpus":[{"name":"RTX 4070","load":54,"temp":61,"vram_used":6.3,"vram_total":12,"discrete":true}],
+ "disk":{"pct":54,"act":72,"r":1843,"w":420,"temp":49,"model":"Samsung SSD 990 PRO"},
+ "net":{"dl":10.03,"ul":1.52},
+ "host":{"name":"research-pc","os":"win","clock":52056}}
+```
+
+| Key | ความหมาย | เพิ่มในเวอร์ชันนี้? |
+|---|---|---|
+| `cpu.load / freq / cores / temp` | %, MHz, จำนวน logical CPU, °C | ไม่ |
+| `cpu.name / power / volt / fan` | ชื่อรุ่น, W, V, RPM | **ใช่** |
+| `cpu.per_core` | load % รายคอร์ สูงสุด 16 ค่า (ถ้ามากกว่านี้จะเฉลี่ยรวมเหลือ 16) | **ใช่** |
+| `ram.pct / used / total` | %, GiB, GiB | ไม่ |
+| `gpus[]` | ชื่อ, load, temp, VRAM (การ์ดแยกขึ้นก่อน) | ไม่ |
+| `disk.pct / r / w` | พื้นที่ใช้ไป %, อ่าน / เขียน MiB/s | ไม่ |
+| `disk.act / temp / model` | busy %, °C, รุ่นไดรฟ์ | **ใช่** |
+| `net.dl / ul` | MiB/s (จอแปลงเป็น Mbps ให้) | ไม่ |
+| `host.name / os` | | ไม่ |
+| `host.clock` | วินาทีนับจากเที่ยงคืนตามเวลาเครื่อง ใช้แสดงนาฬิกาที่ header | **ใช่** |
+
+**ความเข้ากันได้**: firmware ข้าม key ที่ไม่รู้จัก ดังนั้น firmware เก่าใช้กับ agent ใหม่ได้ และ firmware ใหม่ใช้กับ agent เก่าได้ (แค่ power, voltage, fan, แท่งรายคอร์, อุณหภูมิ/activity ของไดรฟ์ และนาฬิกาจะขึ้น `--`) โดย `disk.pct` (พื้นที่ใช้ไป) **ไม่ถูกนำมาแสดงเป็น NVMe activity** โดยตั้งใจ
 
 ## เกี่ยวกับบอร์ด
 
@@ -50,7 +83,7 @@
 | ทัชสกรีน | XPT2046 แบบ resistive (bit-bang: CLK 25, DIN 32, DOUT 39, CS 33) |
 | USB-serial | CH340 — OS รองรับในตัว ไม่ต้องลง driver |
 
-> ⚠️ บอร์ด CYD แต่ละล็อตไม่เหมือนกัน ถ้าสีเพี้ยนกลับด้าน ให้ลบ `-D TFT_INVERSION_ON=1` ออกจาก `platformio.ini` และถ้าจุดแตะไม่ตรง ให้แก้ค่า `touch.setCal(...)` ใน `src/main.cpp`
+> ⚠️ บอร์ด CYD แต่ละล็อตไม่เหมือนกัน ถ้าสีเพี้ยนกลับด้าน ให้ flash environment อีกตัว: `pio run -e cyd-noinvert -t upload` (ค่าเริ่มต้น `esp32dev` เปิด `TFT_INVERSION_ON`) และถ้าจุดแตะไม่ตรง ให้แก้ค่า `touch.setCal(...)` ใน `src/main.cpp`
 
 ## เริ่มใช้งาน
 
@@ -61,6 +94,8 @@ git clone https://github.com/moomdate/CYD-Resource-Monitor.git
 cd CYD-Resource-Monitor
 pio run -t upload
 ```
+
+ไม่ต้องตั้งค่าอะไร: ถ้ายังไม่รัน agent จอจะขึ้นแบนเนอร์ OFFLINE และเลือก *Settings → DEMO* เพื่อดู UI ด้วยข้อมูลจำลองได้
 
 ### 2. รัน agent บนเครื่องที่จะมอนิเตอร์
 
@@ -86,10 +121,36 @@ python monitor_agent.py          # หา port ของบอร์ดเอง
 | ข้อมูล | ต้องทำอะไร |
 |---|---|
 | การ์ด NVIDIA (load/temp/VRAM) | `pip install pynvml` |
-| Windows: อุณหภูมิ CPU + การ์ด AMD/Intel | รัน [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) เปิด Options → Remote Web Server (agent ต่อ `localhost:8085` ให้เอง) |
+| Windows: อุณหภูมิ CPU / **power / voltage / fan**, **อุณหภูมิ + activity + รุ่นของไดรฟ์**, การ์ด AMD/Intel | รัน [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) เปิด Options → Remote Web Server (agent ต่อ `localhost:8085` ให้เอง) |
 | macOS: อุณหภูมิ CPU | `brew install smctemp` |
+| Linux: อุณหภูมิ CPU / ไดรฟ์, พัดลม | อ่านผ่านไดรเวอร์ lm-sensors (psutil) — ยังเป็นแบบทดลอง ยังไม่ได้ทดสอบบนเครื่อง Linux จริง |
 
-Agent ออกแบบให้ degrade อย่างสุภาพ — ข้อมูลไหนไม่มี จอขึ้น `n/a` แทน ไม่พังทั้งระบบ
+แต่ละ OS ให้ข้อมูลอะไรได้บ้าง:
+
+| | Windows (+ LHM) | Windows (ไม่มี LHM) | macOS | Linux |
+|---|---|---|---|---|
+| CPU load, รายคอร์, clock, RAM, เครือข่าย, read/write | ✅ | ✅ | ✅ | ✅ |
+| อุณหภูมิ CPU | ✅ | – | ต้องมี `smctemp` | ถ้ามี sensor |
+| CPU power / voltage / fan | ✅ ถ้ามี sensor | – | – | เฉพาะ fan |
+| อุณหภูมิ / รุ่นของไดรฟ์ | ✅ | – | รุ่น | ✅ |
+| NVMe activity % | ✅ ค่าจริง | ~ ประมาณการ | ~ ประมาณการ | ✅ ค่าจริง |
+
+"ประมาณการ" = ความเร็วอ่าน/เขียนเทียบกับค่าสูงสุดที่เคยเห็นตั้งแต่ agent เริ่มทำงาน (ขั้นต่ำ 150 MiB/s) ใช้ดูคร่าวๆ ว่าไดรฟ์ยุ่งแค่ไหน ไม่ใช่ค่าที่วัดจริง ข้อมูลที่ไม่มีจะขึ้น `--` บนจอ และ agent ไม่เคยส่ง `null`/`NaN`
+
+## วิธีใช้งานบนจอ
+
+| การแตะ | ผลลัพธ์ |
+|---|---|
+| Header หรือแถบล่าง (`SETUP`) | เปิดหน้า Settings |
+| แผงใดแผงหนึ่ง (CPU / หน่วยความจำ / เครือข่าย / NVMe) | เปิดหน้าประวัติ 60 วินาทีของแผงนั้น |
+| `<` `>` ในหน้าประวัติ | วนไป CPU load → CPU temp → หน่วยความจำ → GPU → เครือข่าย → NVMe |
+| `BACK` / `DONE` | กลับหน้าหลัก |
+
+**Settings**: ธีม (ภาพย่อจากอาร์ตจริง), แหล่งข้อมูล (`PC AGENT` / `DEMO`), โหมดเดโม (`IDLE` / `GAMING` / `TRANSFER` / `CYCLE`), ความสว่าง (20–100 %) และมีบรรทัดบอกว่าตอนนี้ agent เชื่อมต่ออยู่ไหม แม้จะอยู่ในโหมด DEMO
+
+สถานะที่ header: **ONLINE** สีเขียว (ข้อมูลสด), **DEMO** สีเหลืองอำพัน (ตัวจำลอง), **OFFLINE** สีแดงกระพริบ (ไม่มีข้อมูลเกิน 2.5 วินาที)
+
+> ตัวเลือก tile และแถบ RGB วิ่งของเฟิร์มแวร์เดิมถูกนำออก: หน้าหลักตอนนี้เป็นเลย์เอาต์เดียวตามดีไซน์ ส่วนธีม ความสว่าง หน้าประวัติ รายละเอียด GPU และการบันทึกค่ายังอยู่ครบ
 
 ## การใช้งานประจำวัน & Auto-start
 
@@ -98,8 +159,8 @@ Agent ออกแบบให้ degrade อย่างสุภาพ — ข
 ไฟล์ `.exe` เป็นแบบ **portable — ไม่ต้อง install** วางไว้ที่ไหนก็ได้ เสียบบอร์ด ดับเบิลคลิก จบ จะมีหน้าต่าง console เปิดขึ้นมาแสดง `connected to COM5` แล้วจอเริ่มขึ้นข้อมูลทันที
 
 - **เฉพาะครั้งแรก**: SmartScreen จะเตือนเพราะไฟล์ไม่ได้ code-sign — กด *More info → Run anyway*
-- **ไม่ต้องตั้งค่าอะไร**: agent หา COM port ของบอร์ด (CH340) เองอัตโนมัติ และรองรับการ์ด NVIDIA ในตัว มีแค่อุณหภูมิ CPU / การ์ด AMD / Intel ที่ต้องเปิด LibreHardwareMonitor คู่กัน (ดูตารางด้านบน)
-- **เปิดเครื่องใหม่ agent จะไม่รันเอง** — จอจะขึ้น *WAITING FOR PC* จนกว่าจะเปิด `.exe` อีกครั้ง ถ้าอยากให้รันอัตโนมัติ:
+- **ไม่ต้องตั้งค่าอะไร**: agent หา COM port ของบอร์ด (CH340) เองอัตโนมัติ และรองรับการ์ด NVIDIA ในตัว มีแค่ sensor ที่อ่านผ่าน LHM (อุณหภูมิ CPU / power / voltage / fan, ข้อมูลไดรฟ์, การ์ด AMD / Intel) ที่ต้องเปิด LibreHardwareMonitor คู่กัน (ดูตารางด้านบน)
+- **เปิดเครื่องใหม่ agent จะไม่รันเอง** — จอจะขึ้น *OFFLINE / WAITING FOR AGENT* จนกว่าจะเปิด `.exe` อีกครั้ง ถ้าอยากให้รันอัตโนมัติ:
 
 | วิธี | ขั้นตอน | ผลลัพธ์ |
 |---|---|---|
@@ -116,7 +177,31 @@ Agent ออกแบบให้ degrade อย่างสุภาพ — ข
 
 Agent มี reconnect loop ในตัว — ถอดบอร์ด เสียบใหม่ หรือจอรีบูต **ไม่ต้องรัน agent ซ้ำ** มันต่อกลับให้เอง
 
-> ⚠️ **ข้อจำกัด macOS**: Apple ล็อกการอ่าน GPU load บน Apple Silicon ไว้หลัง API ที่ต้องใช้ sudo จอจึงแสดง GPU load เป็น `n/a` บน Mac ส่วน Windows ได้ครบทุกอย่างถ้ารัน LibreHardwareMonitor
+> ⚠️ **ข้อจำกัด macOS**: Apple ล็อกการอ่าน GPU load บน Apple Silicon ไว้หลัง API ที่ต้องใช้ sudo จอจึงแสดง GPU load เป็น `--` บน Mac (เห็นได้เฉพาะหน้าประวัติ GPU) และไม่มี CPU power / voltage / fan ด้วย ส่วน Windows ได้ครบทุกอย่างถ้ารัน LibreHardwareMonitor
+
+## สำหรับนักพัฒนา
+
+```bash
+pio test -e native                 # unit test บนเครื่อง: parse JSON (รวมกรณี field หาย), model / staleness,
+                                   # renderer ส่งเฉพาะส่วนที่เปลี่ยน, การแตะ settings + ประวัติ, ตัวจำลอง, อาร์ตธีม
+python -m unittest discover -s agent -v            # เทสต์ของ agent (psutil ปลอม ไม่ต้องมีฮาร์ดแวร์)
+pio run -e esp32dev                # build firmware (หรือ -e cyd-noinvert)
+tools/host_preview/run.sh          # เรนเดอร์โค้ด UI จริงเป็น PNG ที่ tools/host_preview/out/ (ต้องมี Pillow)
+```
+
+**Host preview** คอมไพล์โค้ด UI, model, JSON parser และตัวจำลองตัวจริงของ firmware บนคอมพิวเตอร์ แล้วเขียน PNG ขนาด 640×480 (ทุกธีม, พรีเซ็ตเดโม, ตัวอย่าง JSON ของ agent ใน `tools/host_preview/samples/` รวมข้อความจาก agent เวอร์ชันเก่า, สถานะ offline / stale, หน้า settings และหน้าประวัติ) พร้อม `sim.gif` จึงปรับเลย์เอาต์ได้โดยไม่ต้องมีบอร์ด
+
+### กระบวนการสร้างอาร์ต
+
+```
+tools/gen_chrome.py   → src/assets/bg_{ice,violet,amber}.h   กรอบ/ป้ายคงที่/ฉากหลังวงแหวนของแต่ละธีม (RGB565 อยู่ใน flash)
+                      → src/assets/layout.h                  ตำแหน่งทุกสี่เหลี่ยม ใช้ร่วมกับ renderer ฝั่ง C++
+tools/make_fonts.py   → src/fonts/*.h                        ฟอนต์ anti-alias ที่ blend กับพิกเซลจริง
+```
+
+ฟอนต์: ดีไซน์ใช้ **Barlow Condensed** และ **IBM Plex Mono** (SIL OFL) ถ้าไม่มีไฟล์ `tools/font_src/*.ttf` สคริปต์ `make_fonts.py` / `gen_chrome.py` จะใช้ฟอนต์ที่มาพร้อม Pillow แทน (ทำให้หนาและแคบลง) เพื่อให้ build ผ่านเสมอ — ถ้าต้องการหน้าตาตรงดีไซน์ ให้รัน `python tools/make_fonts.py --fetch` แล้ว `python tools/gen_chrome.py` จากนั้น commit header ที่สร้างใหม่ ถ้าจะแก้เลย์เอาต์ให้แก้ `LAYOUT` ใน `gen_chrome.py` แล้วรันใหม่ (ต้องมี Pillow + numpy)
+
+CI (`.github/workflows/ci.yml`) รัน native test, build บอร์ดทั้งสองแบบ, เรนเดอร์ host preview และรันเทสต์ agent บน Linux, Windows และ macOS
 
 ## Release อัตโนมัติ (CI)
 
@@ -136,16 +221,26 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ```
 agent/
-└── monitor_agent.py   # Python agent (Windows + macOS)
+├── monitor_agent.py       # Python agent (Windows / macOS / Linux)
+└── test_monitor_agent.py
+research-monitor/          # ดีไซน์: index.html (ต้นฉบับ), ภาพคอนเซ็ปต์, ไฟล์อ้างอิง LVGL
 src/
-├── config.h           # ขาต่างๆ
-├── ui.h               # sprite renderer, ธีม, ทัช, widget
-├── data.h             # JSON parse, history ring, การตั้งค่า NVS
-├── dash.h             # dashboard grid
-├── detail.h           # หน้ากราฟรายตัว
-├── settings.h         # เลือกธีม / RGB / tile
-└── main.cpp           # loop + สลับหน้าจอ
+├── config.h               # ขา, เวลา (30 fps, staleness 2.5 วินาที)
+├── settings.h             # ธีม / แหล่งข้อมูล / โหมดเดโม / ความสว่าง
+├── main.cpp               # รับ serial, แหล่งเดโม, ทัช, สลับหน้า, NVS, backlight
+├── data/                  # telemetry.* (JSON parser + line reader), sim_source.* (เดโม)
+├── ui/                    # monitor_model (staleness, หน่วย, ประวัติ), monitor_ui (renderer แบบวาดเฉพาะส่วนที่เปลี่ยน),
+│                          # canvas (canvas RGB565 รายส่วน), settings_ui, detail_ui, widgets, theme
+├── assets/                # สร้างอัตโนมัติ: ฉากหลังแต่ละธีม + layout.h
+└── fonts/                 # สร้างอัตโนมัติ: ฟอนต์ AA
+tools/                     # gen_chrome.py, gen_font.py, make_fonts.py, host_preview/
+test/test_native/          # unit test บนเครื่อง
 ```
+
+<a id="status"></a>
+## สิ่งที่ยังไม่ได้ทดสอบกับบอร์ดจริง
+
+UI นี้พัฒนาโดยไม่ได้ต่อบอร์ด ที่ตรวจแล้ว: firmware build ผ่านทั้งสองแบบ, unit test บนเครื่อง 36 ข้อ, ภาพเรนเดอร์ของทุกหน้าจอ **ที่ยังไม่ได้ตรวจบน CYD จริง**: เฟรมเรตและความเร็ว SPI จริง, สีและคอนทราสต์บน ILI9341 (อาร์ตใช้สีตามดีไซน์ตรงๆ จอ TFT ดูจืดกว่าจอคอมพิวเตอร์), ความแม่นยำการแตะปุ่มเล็กๆ, PWM ของ backlight, การเก็บค่าใน NVS และพฤติกรรม serial ระยะยาว โค้ดอ่าน sensor ใหม่ของ agent ทดสอบกับข้อมูล LibreHardwareMonitor สังเคราะห์และ `psutil` ปลอม ยังไม่ได้ลองบนเครื่อง Windows / Linux จริง
 
 ## สัญญาอนุญาต
 
